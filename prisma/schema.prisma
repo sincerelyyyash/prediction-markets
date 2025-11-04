@@ -1,0 +1,59 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+
+model User { 
+    id    Int     @id @default(autoincrement()) 
+    email String  @unique
+    name  String?
+    password String
+    balance  Int?
+    position Positions[]
+}
+
+model Admin { 
+    id    Int     @id @default(autoincrement()) 
+    email String  @unique
+    name  String?
+    password String
+}
+
+model Market {
+  id  Int @id @default(autoincrement())
+  name String
+  desc String
+  imgURL String
+  endDate  DateTime
+  FinalOutcome Outcome?
+  Volume Int?
+}
+
+
+model Postions {
+  id  Int @id @default(autoincrement())
+  userId  Int
+  marketId Int
+  YesHolding  Int
+  NoHolding  Int
+
+  User @relation(fields: [userId], references: [id])
+  Market @relation(fields: [marketId], references: [id])
+}
+
+enum Outcome {
+  YES
+  NO
+}
