@@ -1,4 +1,4 @@
-# order-book
+# prediction-markets
 
 To install dependencies:
 
