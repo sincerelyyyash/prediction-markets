@@ -1,26 +1,36 @@
 {
-  "name": "order-book",
-  "module": "index.ts",
-  "type": "module",
   "private": true,
+  "prisma": {
+    "schema": "packages/database/prisma/schema.prisma",
+    "seed": "tsx packages/database/src/seed.ts"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "db:migrate:deploy": "turbo run db:migrate:deploy",
+    "db:migrate:dev": "turbo run db:migrate:dev",
+    "db:push": "turbo run db:push",
+    "db:seed": "turbo run db:seed",
+    "dev": "turbo run dev",
+    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+    "generate": "turbo run generate",
+    "lint": "turbo run lint"
+  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "prettier": "^3.2.5",
+    "prisma": "latest",
+    "tsx": "4.19.1",
+    "turbo": "^2.5.6"
   },
-  "peerDependencies": {
-    "typescript": "^5"
+  "engines": {
+    "node": ">=18"
   },
+  "name": "with-prisma",
   "dependencies": {
-    "@prisma/adapter-libsql": "^6.18.0",
-    "@prisma/client": "^6.18.0",
-    "@types/bcryptjs": "^3.0.0",
-    "@types/dotenv": "^8.2.3",
-    "@types/express": "^5.0.5",
-    "@types/jsonwebtoken": "^9.0.10",
-    "bcryptjs": "^3.0.3",
-    "dotenv": "^17.2.3",
-    "express": "^5.1.0",
-    "jsonwebtoken": "^9.0.2",
-    "prisma": "^6.18.0",
-    "zod": "^4.1.12"
-  }
+    "@prisma/client": "latest"
+  },
+  "packageManager": "bun@1.2.17",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
 }
