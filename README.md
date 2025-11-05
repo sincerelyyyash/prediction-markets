@@ -1,4 +1,4 @@
-# Turborepo Tailwind CSS starter
+# prediction-markets
 
 This Turborepo starter is maintained by the Turborepo core team.
 
