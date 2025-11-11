@@ -1,1 +1,15 @@
-/target
+# Rust build artifacts
+target/
+**/target/
+
+# SQLx offline data/cache
+.sqlx/
+
+# Environment files
+.env
+.env.*
+
+# Editor/OS files
+.DS_Store
+.idea/
+.vscode/
