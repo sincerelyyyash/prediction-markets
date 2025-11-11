@@ -1,36 +1,15 @@
-# dependencies (bun install)
-node_modules
+# Rust build artifacts
+target/
+**/target/
 
-# output
-out
-dist
-*.tgz
+# SQLx offline data/cache
+.sqlx/
 
-# code coverage
-coverage
-*.lcov
-
-# logs
-logs
-_.log
-report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
-
-# dotenv environment variable files
+# Environment files
 .env
-.env.development.local
-.env.test.local
-.env.production.local
-.env.local
+.env.*
 
-# caches
-.eslintcache
-.cache
-*.tsbuildinfo
-
-# IntelliJ based IDEs
-.idea
-
-# Finder (MacOS) folder config
+# Editor/OS files
 .DS_Store
-
-/src/generated/prisma
+.idea/
+.vscode/
