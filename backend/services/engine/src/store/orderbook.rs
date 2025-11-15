@@ -1,49 +1,11 @@
-use serde::{Serialize, Deserialize};
 use tokio::sync::{mpsc, oneshot};
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OrderbookData {
-    pub market_id: u64,
-    pub asks: BTreeMap<u64, u64>,
-    pub bids: BTreeMap<u64, u64>,
-    pub ask_queue: HashMap<u64, Vec<u64>>,
-    pub bid_queue: HashMap<u64, Vec<u64>>,
-    pub orders: HashMap<u64, Order>,  
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Order {
-    pub order_id: Option<u64>,
-    pub market_id: u64,
-    pub user_id: u64,
-    pub price: u64,
-    pub original_qty: u64,
-    pub remaining_qty: u64,
-    pub side: OrderSide,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-
-pub enum OrderSide{
-    Ask,
-    Bid,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OrderbookSnapshot {
-    pub market_id: u64,
-    pub bids: Vec<Level>, 
-    pub asks: Vec<Level>, 
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Level {
-    pub price: u64,
-    pub quantity: u64,
-}
+use crate::types::orderbook_types::{
+    OrderbookData, Order, OrderSide, OrderbookSnapshot, Level
+};
 
 
 #[derive(Debug)]
@@ -194,22 +156,179 @@ pub fn spawn_orderbook_actor() -> Orderbook {
                     let _ = reply.send(Ok(order));
                 },
                 Command::ModifyOrder(order, reply ) => {
+                    let Some(book) = orderbooks.get_mut(&order.market_id) else {
+                        let _ = reply.send(Err("Market not found".into()));
+                        continue;
+                    };
+
+                    let Some(order_id) = order.order_id else {
+                        let _ = reply.send(Err("Order id not found".into()));
+                        continue;
+                    };
+
+                    let Some(existing_order) = book.orders.get(&order_id).cloned() else {
+                        let _ = reply.send(Err("Order not found".into()));
+                        continue;
+                    };
+
+                    let price_changed = existing_order.price != order.price;
+                    let qty_changed = existing_order.original_qty != order.original_qty;
+
+                    if price_changed {
+                        let old_queue_map = match existing_order.side {
+                            OrderSide::Ask => &mut book.ask_queue,
+                            OrderSide::Bid => &mut book.bid_queue,
+                        };
+
+                        if let Some(queue) = old_queue_map.get_mut(&existing_order.price){
+                            queue.retain(|&id| id != order_id);
+                            if queue.is_empty(){
+                                old_queue_map.remove(&existing_order.price);
+                            }
+                        };
+
+                        let old_map = match existing_order.side {
+                            OrderSide::Ask => &mut book.asks,
+                            OrderSide::Bid => &mut book.bids,
+                        };
+
+                        if let Some(level_qty)= old_map.get_mut(&existing_order.price) {
+                            *level_qty -= existing_order.remaining_qty;
+                            if *level_qty == 0 {
+                                old_map.remove(&existing_order.price);
+                            }
+                        }
+                    }
+
+                    if !price_changed && qty_changed {
+                        let map = match order.side {
+                            OrderSide::Ask => &mut book.asks,
+                            OrderSide::Bid => &mut book.bids,
+                        };
+
+                        if let Some(level_qty) = map.get_mut(&order.price) {
+                            let qty_diff = order.original_qty as i64 - existing_order.original_qty as i64;
+                            if qty_diff > 0 {
+                                *level_qty += qty_diff as u64;
+
+                            } else {
+                                *level_qty -= (-qty_diff) as u64;
+                                if *level_qty == 0 {
+                                    map.remove(&order.price);
+                                }
+                            }
+                        }
+                    }
+
+                    if price_changed {
+                        match order.side {
+                            OrderSide::Bid => {
+                                book.bid_queue.entry(order.price).or_default().push(order_id);
+                                *book.bids.entry(order.price).or_default() += order.original_qty;
+                            }
+                            OrderSide::Ask => {
+                                book.ask_queue.entry(order.price).or_default().push(order_id);
+                                *book.asks.entry(order.price).or_default() += order.original_qty;
+                            }
+                        }
+                    }
+
+                    book.orders.insert(order_id, order.clone());
+
+                    let _ = reply.send(Ok(order));
 
                 },
                 Command::GetBestBid(market_id, reply) => {
+                    let Some(book) = orderbooks.get(&market_id) else {
+                        let _ = reply.send(Err("Martke not found".into()));
+                        continue;
+                    };
 
+                    let Some((best_bid_price, _)) = book.bids.last_key_value() else {
+                        let _ = reply.send(Err("No bids available".into()));
+                        continue;
+                    };
+
+                    let _ = reply.send(Ok(*best_bid_price));
                 },
                 Command::GetBestAsk(market_id, reply) => {
+                    let Some(book) = orderbooks.get(&market_id) else {
+                        let _ = reply.send(Err("Market not found".into()));
+                        continue;
+                    };
+
+                    let Some((best_ask_price, _)) = book.asks.first_key_value() else {
+                        let _ = reply.send(Err(" No asks available".into()));
+                        continue;
+                    };
+
+                    let _ = reply.send(Ok(*best_ask_price));
 
                 },
                 Command::GetOrderBook(market_id,reply )=>{
 
+                    let Some(book) = orderbooks.get(&market_id) else {
+                        let _ = reply.send(Err("Market not found".into()));
+                        continue;
+                    };
+
+                    let bids: Vec<Level> = book.bids
+                    .iter()
+                    .rev()
+                    .map(|(price, quantity)| Level{
+                        price: *price,
+                        quantity: *quantity,
+                    })
+                    .collect();
+
+                let asks: Vec<Level> = book.asks
+                .iter()
+                .map(|(price, quantity)| Level {
+                    price: *price,
+                    quantity: *quantity,
+                })
+                .collect();
+                
+                let snapshot = OrderbookSnapshot {
+                    market_id,
+                    bids,
+                    asks,
+                };
+
+                let _ = reply.send(Ok(snapshot));
+
                 },
                 Command::GetUserOpenOrders(user_id,reply )=>{
+                    let mut user_orders = Vec::new();
 
+                    for book in orderbooks.values(){
+                        for order in book.orders.values(){
+                            if order.user_id == user_id {
+                                user_orders.push(order.clone());
+                            }
+                        }
+                    }
+                    
+                    let _ = reply.send(Ok(user_orders));
                 },
-                Command::GetOrderStatus(order_id,reply )=>{
+                Command::GetOrderStatus(order_id, reply ) => {
+                    let mut found_order: Option<Order> = None;
 
+                    for book in orderbooks.values() {
+                        if let Some(order) = book.orders.get(&order_id) {
+                            found_order = Some(order.clone());
+                            break;
+                        }
+                    }
+
+                    match found_order {
+                        Some(order) => {
+                            let _ = reply.send(Ok(order));
+                        }
+                        None => {
+                            let _ = reply.send(Err("Order not found".into()));
+                        }
+                    }
                 },
             }
         }

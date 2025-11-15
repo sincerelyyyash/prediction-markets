@@ -1,3 +1,3 @@
 pub mod orderbook;
-pub mod user_store;
+pub mod user;
 
