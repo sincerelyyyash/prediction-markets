@@ -3,8 +3,15 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 use uuid::Uuid;
 
+use crate::store::balance::reserve_balance;
+use crate::store::balance::return_reserved_balance;
+use crate::store::balance::return_unused_reservation;
+use crate::store::matching::match_order;
+use crate::store::orderbook_actions::add_order_to_book;
+use crate::store::orderbook_actions::remove_order_from_book;
+use crate::store::user::UserStore;
 use crate::types::orderbook_types::{
-    OrderbookData, Order, OrderSide, OrderbookSnapshot, Level
+    OrderbookData, Order, OrderbookSnapshot, Level
 };
 
 
@@ -80,7 +87,7 @@ impl Orderbook {
 
 }
 
-pub fn spawn_orderbook_actor() -> Orderbook {
+pub fn spawn_orderbook_actor(user_store: UserStore) -> Orderbook {
     let (tx, mut rx) = mpsc::channel::<Command>(1000);
 
     tokio::spawn(async move {
@@ -101,61 +108,44 @@ pub fn spawn_orderbook_actor() -> Orderbook {
                     let id = Uuid::new_v4().as_u128() as u64;
                     order.order_id = Some(id);
 
-                    book.orders.insert(id, order.clone());
+                    if let Err(e) = reserve_balance(&order, &user_store).await {
+                        let _ = reply.send(Err(e));
+                        continue;
+                    }
 
-                    //TODO: Add matching logic
+                    if let Err(e) = match_order(&mut order, book, &user_store).await {
+                        let _ = return_reserved_balance(&order, &user_store).await;
+                        let _ = reply.send(Err(e));
+                        continue;
+                    }
 
-                    match order.side {
-                        OrderSide::Bid => {
-                            book.bid_queue.entry(order.price).or_default().push(id);
-                            *book.bids.entry(order.price).or_default() += order.original_qty;
-                        }
-                        OrderSide::Ask => {
-                            book.ask_queue.entry(order.price).or_default().push(id);
-                            *book.asks.entry(order.price).or_default() += order.original_qty;
-                        }
+                    if order.remaining_qty > 0 {
+                        add_order_to_book(id, &order, book);
+                    } else {
+                        let _ = return_unused_reservation(&order, &user_store).await;
                     }
 
                     let _ = reply.send(Ok(order));
                 },
                 Command::CancelOrder(market_id, order_id,reply )=>{
-                    let book = orderbooks.get_mut(&market_id).unwrap();
+                    let Some(book) = orderbooks.get_mut(&market_id) else{
+                        let _ = reply.send(Err("Market not found".into()));
+                        continue;
+                    };
 
-                    let Some(order) = book.orders.remove(&order_id) else {
+                    let Some(order) = book.orders.get(&order_id).cloned() else {
                         let _ = reply.send(Err("Order not found".into()));
                         continue;
                     };
 
-                    let price = order.price;
-                    let qty = order.remaining_qty;
+                    remove_order_from_book(order_id, &order, book);
 
-                    let queue_map = match order.side {
-                        OrderSide::Ask =>  &mut book.ask_queue,
-                        OrderSide::Bid =>  &mut book.bid_queue,
-                    };
+                    let _ = return_reserved_balance(&order, &user_store).await;
 
-                    if let Some(queue) = queue_map.get_mut(&price) {
-                        queue.retain(|&id| id != order_id);
-                        if queue.is_empty() {
-                            queue_map.remove(&price);
-                        }
-                    }
+                    let _ =reply.send(Ok(order));
 
-                    let map = match order.side {
-                        OrderSide::Ask => &mut book.asks,
-                        OrderSide::Bid => &mut book.bids,
-                    };
-
-                    if let Some(level_qty) = map.get_mut(&price) {
-                        *level_qty -=qty;
-                        if *level_qty ==0 {
-                            map.remove(&price);
-                        }
-                    }
-
-                    let _ = reply.send(Ok(order));
                 },
-                Command::ModifyOrder(order, reply ) => {
+                Command::ModifyOrder(mut order, reply ) => {
                     let Some(book) = orderbooks.get_mut(&order.market_id) else {
                         let _ = reply.send(Err("Market not found".into()));
                         continue;
@@ -171,76 +161,36 @@ pub fn spawn_orderbook_actor() -> Orderbook {
                         continue;
                     };
 
-                    let price_changed = existing_order.price != order.price;
-                    let qty_changed = existing_order.original_qty != order.original_qty;
+                   remove_order_from_book(order_id, &existing_order, book);
 
-                    if price_changed {
-                        let old_queue_map = match existing_order.side {
-                            OrderSide::Ask => &mut book.ask_queue,
-                            OrderSide::Bid => &mut book.bid_queue,
-                        };
+                   let _ = return_reserved_balance(&existing_order, &user_store).await;
 
-                        if let Some(queue) = old_queue_map.get_mut(&existing_order.price){
-                            queue.retain(|&id| id != order_id);
-                            if queue.is_empty(){
-                                old_queue_map.remove(&existing_order.price);
-                            }
-                        };
+                   order.order_id = Some(order_id);
+                   order.remaining_qty = order.original_qty;
 
-                        let old_map = match existing_order.side {
-                            OrderSide::Ask => &mut book.asks,
-                            OrderSide::Bid => &mut book.bids,
-                        };
+                   if let Err(e) = reserve_balance(&order, &user_store).await {
+                    let _ = reply.send(Err(e));
+                    continue;
+                }
 
-                        if let Some(level_qty)= old_map.get_mut(&existing_order.price) {
-                            *level_qty -= existing_order.remaining_qty;
-                            if *level_qty == 0 {
-                                old_map.remove(&existing_order.price);
-                            }
-                        }
-                    }
+                   if let Err(e) = match_order(&mut order, book, &user_store).await {
+                    let _ = return_reserved_balance(&order, &user_store).await;
+                    let _ = reply.send(Err(e));
+                    continue;
+                   }
 
-                    if !price_changed && qty_changed {
-                        let map = match order.side {
-                            OrderSide::Ask => &mut book.asks,
-                            OrderSide::Bid => &mut book.bids,
-                        };
+                   if order.remaining_qty > 0 {
+                    add_order_to_book(order_id, &order, book);
+                   } else {
+                    let _ = return_unused_reservation(&order, &user_store).await;
+                   }
 
-                        if let Some(level_qty) = map.get_mut(&order.price) {
-                            let qty_diff = order.original_qty as i64 - existing_order.original_qty as i64;
-                            if qty_diff > 0 {
-                                *level_qty += qty_diff as u64;
-
-                            } else {
-                                *level_qty -= (-qty_diff) as u64;
-                                if *level_qty == 0 {
-                                    map.remove(&order.price);
-                                }
-                            }
-                        }
-                    }
-
-                    if price_changed {
-                        match order.side {
-                            OrderSide::Bid => {
-                                book.bid_queue.entry(order.price).or_default().push(order_id);
-                                *book.bids.entry(order.price).or_default() += order.original_qty;
-                            }
-                            OrderSide::Ask => {
-                                book.ask_queue.entry(order.price).or_default().push(order_id);
-                                *book.asks.entry(order.price).or_default() += order.original_qty;
-                            }
-                        }
-                    }
-
-                    book.orders.insert(order_id, order.clone());
-
-                    let _ = reply.send(Ok(order));
+                   let _ = reply.send(Ok(order));
 
                 },
                 Command::GetBestBid(market_id, reply) => {
                     let Some(book) = orderbooks.get(&market_id) else {
-                        let _ = reply.send(Err("Martke not found".into()));
+                        let _ = reply.send(Err("Market not found".into()));
                         continue;
                     };
 
