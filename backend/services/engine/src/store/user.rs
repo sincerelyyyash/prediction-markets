@@ -13,6 +13,8 @@ enum Command {
     GetPosition(u64, u64, oneshot::Sender<Result<u64, String>>),
     UpdatePosition(u64, u64, i64, oneshot::Sender<Result<(), String>>),
     CheckPositionSufficient(u64, u64, u64, oneshot::Sender<Result<bool, String>>),
+    CreateSplitPosition(u64, u64, u64, u64, oneshot::Sender<Result<(), String>>),
+    MergePosition(u64, u64, u64, oneshot::Sender<Result<(), String>>),
 }
 
 #[derive(Clone)]
@@ -68,6 +70,19 @@ impl UserStore {
         let _ = self.tx.send(Command::CheckPositionSufficient(user_id, market_id, required_qty, tx)).await;
         rx.await.unwrap_or_else(|_| Err("Failed to check position".into()))
     }
+
+    pub async fn create_split_postion(&self, user_id: u64, market1_id: u64, market2_id: u64, amount: u64) -> Result<(), String> {
+        let (tx, rx) = oneshot::channel();
+        let _ =self.tx.send(Command::CreateSplitPosition(user_id, market1_id, market2_id, amount, tx)).await;
+        rx.await.unwrap_or_else(|_| Err("Failed to create split position".into()))
+    }
+
+    pub async fn merge_position(&self, user_id: u64, market1_id: u64, market2_id: u64) -> Result<(), String> {
+        let (tx, rx) = oneshot::channel();
+        let _ = self.tx.send(Command::MergePosition(user_id, market1_id, market2_id, tx)).await;
+        rx.await.unwrap_or_else(|_| Err("Failed to merge position".into()))
+    }
+
 }
 
 pub fn spawn_user_actor() -> UserStore {
@@ -139,6 +154,48 @@ pub fn spawn_user_actor() -> UserStore {
                     .unwrap_or(0);
                 
                     let _ = reply.send(Ok(position >= required_qty));
+                }
+                Command::CreateSplitPosition(user_id,market1_id ,market2_id , amount, reply )=> {
+                    let Some(user) = users.get_mut(&user_id) else {
+                        let _ = reply.send(Err("User not found".into()));
+                        continue;
+                    };
+
+                    if user.balance < amount as i64 {
+                        let _ = reply.send(Err("Insufficient balance".into()));
+                        continue;
+                    }
+
+                    user.balance -= amount as i64;
+                    *user.positions.entry(market1_id).or_insert(0) += amount;
+                    *user.positions.entry(market2_id).or_insert(0) += amount;
+
+                    let _ = reply.send(Ok(()));
+                }
+                Command::MergePosition(user_id,market1_id ,market2_id ,reply )=> {
+                    let Some(user) = users.get_mut(&user_id) else {
+                        let _ = reply.send(Err("User not found".into()));
+                        continue;
+                    };
+
+                    let position1 = user.positions.get(&market1_id).copied().unwrap_or(0);
+                    let position2 = user.positions.get(&market2_id).copied().unwrap_or(0);
+
+                    let merge_qty = position1.min(position2);
+                    if merge_qty == 0 {
+                        let _ = reply.send(Err("Cannot merge, Insufficient positions".into()));
+                        continue;
+                    }
+
+                    user.positions.entry(market1_id).and_modify(|p| *p -= merge_qty);
+                    if user.positions[&market1_id] == 0 {
+                        user.positions.remove(&market1_id);
+                    }
+
+                    user.positions.entry(market2_id).and_modify(|p| *p -= merge_qty);
+                    if user.positions[&market2_id] == 0 {
+                        user.positions.remove(&market2_id);
+                    }
                 }
             }
         }
