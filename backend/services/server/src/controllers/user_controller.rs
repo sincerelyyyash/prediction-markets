@@ -1,4 +1,4 @@
-use actix_web::{get, post, web, HttpRequest, HttpResponse, Responder};
+use actix_web::{post, web, HttpResponse, Responder};
 use crate::types::auth_types::{SignUpUserInput, LoginUserInput};
 use crate::types::user_types::{User};
 use crate::utils::jwt::{create_jwt};
@@ -93,17 +93,7 @@ pub async fn signin_user(db_pool: web::Data<PgPool>, req: web::Json<LoginUserInp
         }
     };
 
-    let hashed_password = match hash(&req.password, DEFAULT_COST) {
-        Ok(h) => h,
-        Err(_) => {
-            return HttpResponse::InternalServerError().json(json!({
-                "status":"error",
-                "message":"Failed to sign up user"
-            }))
-        }
-    };
-
-    let is_valid = verify(&hashed_password, &existing_user.password).unwrap_or(false);
+    let is_valid = verify(&req.password, &existing_user.password).unwrap_or(false);
     if !is_valid {
         return HttpResponse::Unauthorized().json(json!({
             "status":"error",
