@@ -141,6 +141,7 @@ pub fn spawn_user_actor() -> UserStore {
                             if *current == 0 {
                                 user.positions.remove(&market_id);
                             }
+                            let _ = reply.send(Ok(()));
                         }
                       } else {
                         let _ = reply.send(Err("User not found".into()));
@@ -196,6 +197,8 @@ pub fn spawn_user_actor() -> UserStore {
                     if user.positions[&market2_id] == 0 {
                         user.positions.remove(&market2_id);
                     }
+
+                    let _ = reply.send(Ok(()));
                 }
             }
         }
