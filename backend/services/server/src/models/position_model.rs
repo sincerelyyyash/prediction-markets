@@ -1,11 +1,13 @@
+use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow};
+use sqlx::FromRow;
 
-#[derive(Deserialize, Serialize, FromRow, Debug)]
+#[derive(Serialize, Deserialize, FromRow, Debug, Clone)]
 pub struct Position {
-    id: u32,
-    user_id: u32,
-    market_id: u32,
-    yes_holding: u32,
-    no_holding: u32,
+    pub id: u64,
+    pub user_id: u64,
+    pub market_id: u64,
+    pub quantity: u64,
+    pub created_at: Option<NaiveDateTime>,
+    pub updated_at: Option<NaiveDateTime>,
 }
