@@ -1,13 +1,21 @@
-use jsonwebtoken::{encode, Header, EncodingKey};
+use chrono::{Duration, Utc};
+use jsonwebtoken::{encode, EncodingKey, Header};
+use serde::{Deserialize, Serialize};
 
-fn create_jwt(email: &str, secret: &str) -> Result<String, jsonwebtoken::errors::Error> {
+#[derive(Debug, Serialize, Deserialize)]
+struct Claims {
+    sub: i64,
+    exp: usize,
+}
+
+pub fn create_jwt(id: &i64, secret: &str) -> Result<String, jsonwebtoken::errors::Error> {
     let expiration = Utc::now()
         .checked_add_signed(Duration::hours(24)) 
         .expect("valid timestamp")
         .timestamp();
 
     let claims = Claims {
-        sub: email.to_owned(),
+        sub: id.to_owned(),
         exp: expiration as usize,
     };
 
