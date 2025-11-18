@@ -1,3 +1,5 @@
+use crate::store::market::MarketStore;
+use crate::types::market_types::MarketStatus;
 use crate::types::orderbook_types::{OrderbookData, Order, OrderSide};
 use crate::store::user::UserStore;
 
@@ -5,8 +7,17 @@ pub async fn match_order(
     order: &mut Order,
     book: &mut OrderbookData,
     user_store: &UserStore,
+    market_store: &MarketStore
 ) -> Result<(), String> {
     
+    let Some(market) = market_store.get_market(order.market_id) else {
+        return Err("Market not found".into());
+    };
+
+    if market.status != MarketStatus::Active{
+        return Err("Market not active to trade".into());
+    };
+
     match order.side {
         OrderSide::Bid=> match_bid_against_asks(order, book, user_store).await,
         OrderSide::Ask => match_ask_against_bids(order, book, user_store).await, 

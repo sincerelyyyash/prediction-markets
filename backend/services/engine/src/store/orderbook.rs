@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::store::balance::reserve_balance;
 use crate::store::balance::return_reserved_balance;
 use crate::store::balance::return_unused_reservation;
+use crate::store::market::MarketStore;
 use crate::store::matching::match_order;
 use crate::store::orderbook_actions::add_order_to_book;
 use crate::store::orderbook_actions::remove_order_from_book;
@@ -87,7 +88,7 @@ impl Orderbook {
 
 }
 
-pub fn spawn_orderbook_actor(user_store: UserStore) -> Orderbook {
+pub fn spawn_orderbook_actor(user_store: UserStore, market_store: MarketStore) -> Orderbook {
     let (tx, mut rx) = mpsc::channel::<Command>(1000);
 
     tokio::spawn(async move {
@@ -113,7 +114,7 @@ pub fn spawn_orderbook_actor(user_store: UserStore) -> Orderbook {
                         continue;
                     }
 
-                    if let Err(e) = match_order(&mut order, book, &user_store).await {
+                    if let Err(e) = match_order(&mut order, book, &user_store, &market_store).await {
                         let _ = return_reserved_balance(&order, &user_store).await;
                         let _ = reply.send(Err(e));
                         continue;
@@ -173,7 +174,7 @@ pub fn spawn_orderbook_actor(user_store: UserStore) -> Orderbook {
                     continue;
                 }
 
-                   if let Err(e) = match_order(&mut order, book, &user_store).await {
+                   if let Err(e) = match_order(&mut order, book, &user_store, &market_store).await {
                     let _ = return_reserved_balance(&order, &user_store).await;
                     let _ = reply.send(Err(e));
                     continue;

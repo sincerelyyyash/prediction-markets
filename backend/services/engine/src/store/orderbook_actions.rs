@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use crate::types::orderbook_types::{OrderbookData, Order, OrderSide};
 
 pub fn remove_order_from_book(order_id: u64, order: &Order, book: &mut OrderbookData){
