@@ -1,57 +1,15 @@
 use actix_web::{get, post, web, HttpRequest, HttpResponse, Responder};
-use serde::Deserialize;
-use bcrypt::{hash, DEFAULT_COST};
+use crate::types::auth_types::{SignUpUserInput, LoginUserInput};
+use crate::types::user_types::{User};
+use crate::utils::jwt::{create_jwt};
+use bcrypt::{hash, DEFAULT_COST, verify};
 use serde_json::json;
 use validator::Validate;
 use sqlx::PgPool;
 use std::env;
 
-#[derive(Deserialize, Validate, Debug)]
-struct signUpUserInput {
-    #[validate(email(message = "Invalid email format"))]
-    email: String,
-
-    #[Validate(length(min=2, message= "Name must be atleast 2 characters"))]
-    name: String,
-
-    #[Validate(length(min=8, message= "Password must be atleast 8 characters"))]
-    password: String,
-}
-
-#[derive(Deserialize, Validate, Debug)]
-struct loginUserInput {
-    #[Validate(email(message = "Invalid email format"))]
-    email: String,
-
-    #[Validate(length(min=8, message= "Password must be atleast 8 characters long"))]
-    password: String,
-}
-
-#[derive(Deserialize, Validate, Debug)]
-struct splitSchema {
-    #[Validate(length(min= 2, message= "User id invalid"))]
-    id: u32,
-
-    #[Validate(length(min=2,message= "Market id invalid"))]
-    marketId: u32,
-
-    #[Validate(length(min=1, message="amount cannot be less than 1"))]
-    amount: u64,
-}
-
-#[derive(Deserialize, Validate, Debug)]
-struct mergeSchema {
-    #[Validate(length(min=2, message ="Invalid user Id"))]
-    id: u32,
-
-    #[Validate(length(min=2,message= "Market id invalid"))]
-    marketId: u32,
-
-}
-
-
 #[post("user/signup")]
-async fn signup_user(db_pool: web::Data<PgPool>, req: web::Json<signUpUserInput>) -> impl Responder {
+pub async fn signup_user(db_pool: web::Data<PgPool>, req: web::Json<SignUpUserInput>) -> impl Responder {
     if let Err(e) = req.validate(){
         return HttpResponse::BadRequest().json(json!({
             "status":"error",
@@ -71,13 +29,13 @@ async fn signup_user(db_pool: web::Data<PgPool>, req: web::Json<signUpUserInput>
 
     let user = sqlx::query!(
         r#"
-        INSERT INTO users(email, name, hashed_password)
+        INSERT INTO users(email, name, password)
         VALUES ($1, $2, $3)
         RETURNING id
         "#,
         req.email,
         req.name,
-        req.password
+        hashed_password,
     )
     .fetch_one(db_pool.get_ref())
     .await;
@@ -99,7 +57,7 @@ async fn signup_user(db_pool: web::Data<PgPool>, req: web::Json<signUpUserInput>
 }
 
 #[post("user/signin")]
-async fn signin_user(db_pool: web::Data<PgPool>, req: web::Json<loginUserInput>) -> impl Responder {
+pub async fn signin_user(db_pool: web::Data<PgPool>, req: web::Json<LoginUserInput>) -> impl Responder {
     if let Err(e) = req.validate(){
         return HttpResponse::BadRequest().json(json!({
             "status":"error",
@@ -112,10 +70,10 @@ async fn signin_user(db_pool: web::Data<PgPool>, req: web::Json<loginUserInput>)
         User,
         r#"
         SELECT id, name, email, password, balance FROM users WHERE email =$1
-        "#
-        req.email
+        "#,
+        req.email,
     )
-    .fetch_optional(pool.get_ref())
+    .fetch_optional(db_pool.get_ref())
     .await;
 
     let existing_user = match result {

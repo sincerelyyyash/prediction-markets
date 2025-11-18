@@ -1,7 +1,12 @@
+mod controllers;
+mod types;
+mod utils;
+
 use actix_web::{App, HttpResponse, HttpServer, Responder, web};
 use sqlx::postgres::PgPoolOptions;
 use std::env;
 use dotenvy::dotenv;
+use crate::controllers::user_controller::{signup_user, signin_user};
 
 async fn health()-> impl Responder {
     HttpResponse::Ok()
@@ -27,6 +32,8 @@ async fn run()-> std::io::Result<()> {
 
     HttpServer::new(move|| App::new()
     .app_data(web::Data::new(pool.clone()))
+    .service(signup_user)
+    .service(signin_user)
     .route("/health", web::get().to(health)))
     .bind("127.0.0.1:8000")?
     .run()
