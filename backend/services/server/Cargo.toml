@@ -15,4 +15,4 @@ log = "0.4"
 jsonwebtoken = { version = "10", features = ["rust_crypto"] }
 dotenvy = "0.15"
 sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "chrono"] }
-chrono = "0.4.42"
+chrono = { version = "0.4.42", features = ["serde"] }
