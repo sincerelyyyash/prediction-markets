@@ -1,12 +1,14 @@
 mod controllers;
 mod types;
 mod utils;
+mod models;
 
 use actix_web::{App, HttpResponse, HttpServer, Responder, web};
 use sqlx::postgres::PgPoolOptions;
 use std::env;
 use dotenvy::dotenv;
 use crate::controllers::user_controller::{signup_user, signin_user};
+use crate::controllers::admin_controller::{signin_admin};
 
 async fn health()-> impl Responder {
     HttpResponse::Ok()
