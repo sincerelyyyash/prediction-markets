@@ -1,47 +1,50 @@
-use crate::types::orderbook_types::{Order, OrderSide};
-use crate::store::user::UserStore;
+use std::collections::HashMap;
 
-pub async fn reserve_balance( order: &Order, user_store: &UserStore) -> Result<(), String> {
+use crate::types::orderbook_types::{Order, OrderSide};
+use crate::types::user_types::User;
+
+pub async fn reserve_balance(order: &Order, users: &mut HashMap<u64, User>) -> Result<(), String> {
     match order.side {
         OrderSide::Bid => {
             let total_cost = (order.original_qty as i64) * (order.price as i64);
-            user_store.update_balance(order.user_id, -total_cost).await
-            .map_err(|e| format!("Insufficient balance: {}", e))
+            update_balance(users, order.user_id, -total_cost)
         }
         OrderSide::Ask => {
-            let has_sufficient = user_store.check_position_sufficient(
-                order.user_id, 
-                order.market_id, 
-    order.original_qty
-        ).await.map_err(|e| format!("Failed to check positions {}",e))?;
-
-        if !has_sufficient {
-            return Err("Insufficient positions quantity".into());
-        }
-
-        user_store.update_position(order.user_id, order.market_id, -(order.original_qty as i64)).await
-        .map_err(|e| format!("insufficient position: {}", e))
+            if !check_position_sufficient(users, order.user_id, order.market_id, order.original_qty)
+            {
+                return Err("Insufficient positions quantity".into());
+            }
+            update_position(
+                users,
+                order.user_id,
+                order.market_id,
+                -(order.original_qty as i64),
+            )
         }
     }
 }
 
-pub async fn return_reserved_balance(order: &Order, user_store: &UserStore) -> Result<(), String> {
+pub async fn return_reserved_balance(
+    order: &Order,
+    users: &mut HashMap<u64, User>,
+) -> Result<(), String> {
     match order.side {
         OrderSide::Bid => {
             let reserved = (order.remaining_qty as i64) * (order.price as i64);
-            user_store.update_balance(order.user_id, reserved).await
-            .map_err(|e| format!("Failed to return balance: {}", e))
+            update_balance(users, order.user_id, reserved)
         }
-        OrderSide::Ask => {
-            user_store.update_position(order.user_id, order.market_id, order.remaining_qty as i64).await
-            .map_err(|e| format!("Failed to return position: {}", e))
-        }
+        OrderSide::Ask => update_position(
+            users,
+            order.user_id,
+            order.market_id,
+            order.remaining_qty as i64,
+        ),
     }
 }
 
 pub async fn return_unused_reservation(
     order: &Order,
-    user_store: &UserStore
+    users: &mut HashMap<u64, User>,
 ) -> Result<(), String> {
     match order.side {
         OrderSide::Bid => {
@@ -49,20 +52,60 @@ pub async fn return_unused_reservation(
             let used = ((order.original_qty - order.remaining_qty) as i64) * (order.price as i64);
             let unused = original_reservation - used;
             if unused > 0 {
-                user_store.update_balance(order.user_id, unused).await
-                .map_err(|e| format!("Failed to return unused balance: {}", e))
+                update_balance(users, order.user_id, unused)
             } else {
-                 Ok(())
+                Ok(())
             }
         }
         OrderSide::Ask => {
             let unused = order.remaining_qty as i64;
             if unused > 0 {
-                user_store.update_position(order.user_id, order.market_id, unused).await
-                .map_err(|e|format!("Failed to return unused position: {}", e))
+                update_position(users, order.user_id, order.market_id, unused)
             } else {
                 Ok(())
             }
         }
     }
+}
+
+fn update_balance(users: &mut HashMap<u64, User>, user_id: u64, amount: i64) -> Result<(), String> {
+    let Some(user) = users.get_mut(&user_id) else {
+        return Err("User not found".into());
+    };
+    user.balance += amount;
+    Ok(())
+}
+
+fn update_position(
+    users: &mut HashMap<u64, User>,
+    user_id: u64,
+    market_id: u64,
+    amount: i64,
+) -> Result<(), String> {
+    let Some(user) = users.get_mut(&user_id) else {
+        return Err("User not found".into());
+    };
+    let current = user.positions.entry(market_id).or_insert(0);
+    if amount < 0 && (*current as i64) < -amount {
+        return Err("Insufficient position".into());
+    }
+    *current = ((*current as i64) + amount) as u64;
+    if *current == 0 {
+        user.positions.remove(&market_id);
+    }
+    Ok(())
+}
+
+fn check_position_sufficient(
+    users: &HashMap<u64, User>,
+    user_id: u64,
+    market_id: u64,
+    required_qty: u64,
+) -> bool {
+    users
+        .get(&user_id)
+        .and_then(|u| u.positions.get(&market_id))
+        .copied()
+        .unwrap_or(0)
+        >= required_qty
 }

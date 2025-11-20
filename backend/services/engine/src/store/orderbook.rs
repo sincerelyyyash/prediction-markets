@@ -1,6 +1,6 @@
-use tokio::sync::{mpsc, oneshot};
 use std::collections::BTreeMap;
 use std::collections::HashMap;
+use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
 
 use crate::store::balance::reserve_balance;
@@ -10,26 +10,31 @@ use crate::store::market::MarketStore;
 use crate::store::matching::match_order;
 use crate::store::orderbook_actions::add_order_to_book;
 use crate::store::orderbook_actions::remove_order_from_book;
-use crate::store::user::UserStore;
-use crate::types::orderbook_types::{
-    OrderbookData, Order, OrderbookSnapshot, Level
-};
-
+use crate::types::orderbook_types::{Level, Order, OrderbookData, OrderbookSnapshot};
+use crate::types::user_types::User;
 
 #[derive(Debug)]
 enum Command {
     PlaceOrder(Order, oneshot::Sender<Result<Order, String>>),
     CancelOrder(u64, u64, oneshot::Sender<Result<Order, String>>),
     ModifyOrder(Order, oneshot::Sender<Result<Order, String>>),
-    
+
     GetBestBid(u64, oneshot::Sender<Result<u64, String>>),
     GetBestAsk(u64, oneshot::Sender<Result<u64, String>>),
     GetOrderBook(u64, oneshot::Sender<Result<OrderbookSnapshot, String>>),
     // GetOrderBookDepth(u64, u64, oneshot::Sender<u64>),
-    
     GetUserOpenOrders(u64, oneshot::Sender<Result<Vec<Order>, String>>),
     GetOrderStatus(u64, oneshot::Sender<Result<Order , String>>),
-
+    AddUser(User, oneshot::Sender<Option<User>>),
+    GetUserByEmail(String, oneshot::Sender<Option<User>>),
+    GetUserById(u64, oneshot::Sender<Option<User>>),
+    GetBalance(u64, oneshot::Sender<Result<i64, String>>),
+    UpdateBalance(u64, i64, oneshot::Sender<Result<(), String>>),
+    GetPosition(u64, u64, oneshot::Sender<Result<u64, String>>),
+    UpdatePosition(u64, u64, i64, oneshot::Sender<Result<(), String>>),
+    CheckPositionSufficient(u64, u64, u64, oneshot::Sender<Result<bool, String>>),
+    CreateSplitPosition(u64, u64, u64, u64, oneshot::Sender<Result<(), String>>),
+    MergePosition(u64, u64, u64, oneshot::Sender<Result<(), String>>),
 }
 
 #[derive(Clone)]
@@ -39,7 +44,7 @@ pub struct Orderbook {
 
 impl Orderbook {
     pub async fn place_order(&self, order: Order) -> Result<Order, String> {
-        let (tx, rx) = oneshot::channel();
+        let(tx, rx) = oneshot::channel();
         let _ = self.tx.send(Command::PlaceOrder(order, tx)).await;
         rx.await.unwrap_or_else(|_| Err("Failed to place order".into()))
     }
@@ -53,69 +58,187 @@ impl Orderbook {
     pub async fn modify_order(&self, order: Order) -> Result<Order, String> {
         let(tx, rx) = oneshot::channel();
         let _ = self.tx.send(Command::ModifyOrder(order, tx)).await;
-        rx.await.unwrap_or_else(|_| Err("Failed to modify order".into()))
+        rx.await
+            .unwrap_or_else(|_| Err("Failed to modify order".into()))
     }
 
     pub async fn best_bid(&self, market_id: u64) -> Result<u64, String> {
-        let (tx, rx) = oneshot::channel();
+        let(tx, rx) = oneshot::channel();
         let _ = self.tx.send(Command::GetBestBid(market_id, tx)).await;
-        rx.await.unwrap_or_else(|_| Err("Failed to get best bid".into()))
+        rx.await
+            .unwrap_or_else(|_| Err("Failed to get best bid".into()))
     }
 
     pub async fn best_ask(&self, market_id: u64) -> Result<u64, String> {
-        let (tx, rx) = oneshot::channel();
+        let(tx, rx) = oneshot::channel();
         let _ = self.tx.send(Command::GetBestAsk(market_id, tx)).await;
-        rx.await.unwrap_or_else(|_| Err("Failed to get best ask".into()))
+        rx.await
+            .unwrap_or_else(|_| Err("Failed to get best ask".into()))
     }
 
     pub async fn get_orderbook(&self, market_id: u64) -> Result<OrderbookSnapshot, String> {
         let(tx, rx) = oneshot::channel();
         let _ = self.tx.send(Command::GetOrderBook(market_id, tx)).await;
-        rx.await.unwrap_or_else(|_| Err("Failed to get orderbook".into()))
+        rx.await
+            .unwrap_or_else(|_| Err("Failed to get orderbook".into()))
     }
 
     pub async fn get_user_open_orders(&self, user_id: u64) -> Result<Vec<Order>, String> {
         let(tx, rx) = oneshot::channel();
         let _ = self.tx.send(Command::GetUserOpenOrders(user_id, tx)).await;
-        rx.await.unwrap_or_else(|_| Err("Failed to get user orders".into()))
+        rx.await
+            .unwrap_or_else(|_| Err("Failed to get user orders".into()))
     }
 
     pub async fn get_order_status(&self, order_id: u64) -> Result<Order , String> {
-        let (tx, rx) = oneshot::channel();
+        let(tx, rx) = oneshot::channel();
         let _ = self.tx.send(Command::GetOrderStatus(order_id, tx)).await;
-        rx.await.unwrap_or_else(|_| Err("Failed to get order status".into()))
+        rx.await
+            .unwrap_or_else(|_| Err("Failed to get order status".into()))
     }
 
+    pub async fn add_user(&self, user: User) -> Option<User> {
+        let(tx, rx) = oneshot::channel();
+        let _ = self.tx.send(Command::AddUser(user, tx)).await;
+        rx.await.ok().flatten()
+    }
+
+    pub async fn get_user_by_email(&self, email: String) -> Option<User> {
+        let(tx, rx) = oneshot::channel();
+        let _ = self.tx.send(Command::GetUserByEmail(email, tx)).await;
+        rx.await.ok().flatten()
+    }
+
+    pub async fn get_user_by_id(&self, id: u64) -> Option<User> {
+        let(tx, rx) = oneshot::channel();
+        let _ = self.tx.send(Command::GetUserById(id, tx)).await;
+        rx.await.ok().flatten()
+    }
+
+    pub async fn get_balance(&self, id: u64) -> Result<i64, String> {
+        let(tx, rx) = oneshot::channel();
+        let _ = self.tx.send(Command::GetBalance(id, tx)).await;
+        rx.await
+            .unwrap_or_else(|_| Err("failed to get balance".into()))
+    }
+
+    pub async fn update_balance(&self, id: u64, amount: i64) -> Result<(), String> {
+        let(tx, rx) = oneshot::channel();
+        let _ = self.tx.send(Command::UpdateBalance(id, amount, tx)).await;
+        rx.await
+            .unwrap_or_else(|_| Err("failed to update balance".into()))
+    }
+
+    pub async fn get_position(&self, user_id: u64, market_id: u64) -> Result<u64, String> {
+        let(tx, rx) = oneshot::channel();
+        let _ = self
+            .tx
+            .send(Command::GetPosition(user_id, market_id, tx))
+            .await;
+        rx.await
+            .unwrap_or_else(|_| Err("Failed to get positions".into()))
+    }
+
+    pub async fn update_position(
+        &self,
+        user_id: u64,
+        market_id: u64,
+        amount: i64,
+    ) -> Result<(), String> {
+        let(tx, rx) = oneshot::channel();
+        let _ = self
+            .tx
+            .send(Command::UpdatePosition(user_id, market_id, amount, tx))
+            .await;
+        rx.await
+            .unwrap_or_else(|_| Err("Failed to update position".into()))
+    }
+
+    pub async fn check_position_sufficient(
+        &self,
+        user_id: u64,
+        market_id: u64,
+        required_qty: u64,
+    ) -> Result<bool, String> {
+        let(tx, rx) = oneshot::channel();
+        let _ = self
+            .tx
+            .send(Command::CheckPositionSufficient(
+                user_id,
+                market_id,
+                required_qty,
+                tx,
+            ))
+            .await;
+        rx.await
+            .unwrap_or_else(|_| Err("Failed to check position".into()))
+    }
+
+    pub async fn create_split_postion(
+        &self,
+        user_id: u64,
+        market1_id: u64,
+        market2_id: u64,
+        amount: u64,
+    ) -> Result<(), String> {
+        let(tx, rx) = oneshot::channel();
+        let _ = self
+            .tx
+            .send(Command::CreateSplitPosition(
+                user_id, market1_id, market2_id, amount, tx,
+            ))
+            .await;
+        rx.await
+            .unwrap_or_else(|_| Err("Failed to create split position".into()))
+    }
+
+    pub async fn merge_position(
+        &self,
+        user_id: u64,
+        market1_id: u64,
+        market2_id: u64,
+    ) -> Result<(), String> {
+        let(tx, rx) = oneshot::channel();
+        let _ = self
+            .tx
+            .send(Command::MergePosition(user_id, market1_id, market2_id, tx))
+            .await;
+        rx.await
+            .unwrap_or_else(|_| Err("Failed to merge position".into()))
+    }
 }
 
-pub fn spawn_orderbook_actor(user_store: UserStore, market_store: MarketStore) -> Orderbook {
+pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
     let (tx, mut rx) = mpsc::channel::<Command>(1000);
 
     tokio::spawn(async move {
         let mut orderbooks: HashMap<u64, OrderbookData> = HashMap::new();
+        let mut users: HashMap<u64, User> = HashMap::new();
 
         while let Some(cmd) = rx.recv().await {
             match cmd {
-                Command::PlaceOrder(mut order,reply )=> {
-                    let book = orderbooks.entry(order.market_id).or_insert_with(|| OrderbookData {
-                        market_id: order.market_id,
-                        asks: BTreeMap::new(),
-                        bids: BTreeMap::new(),
-                        ask_queue: HashMap::new(),
-                        bid_queue: HashMap::new(),
-                        orders: HashMap::new(),
-                     });
-                    
+                Command::PlaceOrder(mut order, reply) => {
+                    let book = orderbooks
+                        .entry(order.market_id)
+                        .or_insert_with(|| OrderbookData {
+                            market_id: order.market_id,
+                            asks: BTreeMap::new(),
+                            bids: BTreeMap::new(),
+                            ask_queue: HashMap::new(),
+                            bid_queue: HashMap::new(),
+                            orders: HashMap::new(),
+                        });
+
                     let id = Uuid::new_v4().as_u128() as u64;
                     order.order_id = Some(id);
 
-                    if let Err(e) = reserve_balance(&order, &user_store).await {
+                    if let Err(e) = reserve_balance(&order, &mut users).await {
                         let _ = reply.send(Err(e));
                         continue;
                     }
 
-                    if let Err(e) = match_order(&mut order, book, &user_store, &market_store).await {
-                        let _ = return_reserved_balance(&order, &user_store).await;
+                    if let Err(e) = match_order(&mut order, book, &mut users, &market_store).await {
+                        let _ = return_reserved_balance(&order, &mut users).await;
                         let _ = reply.send(Err(e));
                         continue;
                     }
@@ -123,13 +246,13 @@ pub fn spawn_orderbook_actor(user_store: UserStore, market_store: MarketStore) -
                     if order.remaining_qty > 0 {
                         add_order_to_book(id, &order, book);
                     } else {
-                        let _ = return_unused_reservation(&order, &user_store).await;
+                        let _ = return_unused_reservation(&order, &mut users).await;
                     }
 
                     let _ = reply.send(Ok(order));
-                },
-                Command::CancelOrder(market_id, order_id,reply )=>{
-                    let Some(book) = orderbooks.get_mut(&market_id) else{
+                }
+                Command::CancelOrder(market_id, order_id, reply) => {
+                    let Some(book) = orderbooks.get_mut(&market_id) else {
                         let _ = reply.send(Err("Market not found".into()));
                         continue;
                     };
@@ -141,12 +264,11 @@ pub fn spawn_orderbook_actor(user_store: UserStore, market_store: MarketStore) -
 
                     remove_order_from_book(order_id, &order, book);
 
-                    let _ = return_reserved_balance(&order, &user_store).await;
+                    let _ = return_reserved_balance(&order, &mut users).await;
 
-                    let _ =reply.send(Ok(order));
-
-                },
-                Command::ModifyOrder(mut order, reply ) => {
+                    let _ = reply.send(Ok(order));
+                }
+                Command::ModifyOrder(mut order, reply) => {
                     let Some(book) = orderbooks.get_mut(&order.market_id) else {
                         let _ = reply.send(Err("Market not found".into()));
                         continue;
@@ -162,33 +284,32 @@ pub fn spawn_orderbook_actor(user_store: UserStore, market_store: MarketStore) -
                         continue;
                     };
 
-                   remove_order_from_book(order_id, &existing_order, book);
+                    remove_order_from_book(order_id, &existing_order, book);
 
-                   let _ = return_reserved_balance(&existing_order, &user_store).await;
+                    let _ = return_reserved_balance(&existing_order, &mut users).await;
 
-                   order.order_id = Some(order_id);
-                   order.remaining_qty = order.original_qty;
+                    order.order_id = Some(order_id);
+                    order.remaining_qty = order.original_qty;
 
-                   if let Err(e) = reserve_balance(&order, &user_store).await {
-                    let _ = reply.send(Err(e));
-                    continue;
+                    if let Err(e) = reserve_balance(&order, &mut users).await {
+                        let _ = reply.send(Err(e));
+                        continue;
+                    }
+
+                    if let Err(e) = match_order(&mut order, book, &mut users, &market_store).await {
+                        let _ = return_reserved_balance(&order, &mut users).await;
+                        let _ = reply.send(Err(e));
+                        continue;
+                    }
+
+                    if order.remaining_qty > 0 {
+                        add_order_to_book(order_id, &order, book);
+                    } else {
+                        let _ = return_unused_reservation(&order, &mut users).await;
+                    }
+
+                    let _ = reply.send(Ok(order));
                 }
-
-                   if let Err(e) = match_order(&mut order, book, &user_store, &market_store).await {
-                    let _ = return_reserved_balance(&order, &user_store).await;
-                    let _ = reply.send(Err(e));
-                    continue;
-                   }
-
-                   if order.remaining_qty > 0 {
-                    add_order_to_book(order_id, &order, book);
-                   } else {
-                    let _ = return_unused_reservation(&order, &user_store).await;
-                   }
-
-                   let _ = reply.send(Ok(order));
-
-                },
                 Command::GetBestBid(market_id, reply) => {
                     let Some(book) = orderbooks.get(&market_id) else {
                         let _ = reply.send(Err("Market not found".into()));
@@ -201,7 +322,7 @@ pub fn spawn_orderbook_actor(user_store: UserStore, market_store: MarketStore) -
                     };
 
                     let _ = reply.send(Ok(*best_bid_price));
-                },
+                }
                 Command::GetBestAsk(market_id, reply) => {
                     let Some(book) = orderbooks.get(&market_id) else {
                         let _ = reply.send(Err("Market not found".into()));
@@ -214,55 +335,54 @@ pub fn spawn_orderbook_actor(user_store: UserStore, market_store: MarketStore) -
                     };
 
                     let _ = reply.send(Ok(*best_ask_price));
-
-                },
-                Command::GetOrderBook(market_id,reply )=>{
-
+                }
+                Command::GetOrderBook(market_id, reply) => {
                     let Some(book) = orderbooks.get(&market_id) else {
                         let _ = reply.send(Err("Market not found".into()));
                         continue;
                     };
 
-                    let bids: Vec<Level> = book.bids
-                    .iter()
-                    .rev()
-                    .map(|(price, quantity)| Level{
-                        price: *price,
-                        quantity: *quantity,
-                    })
-                    .collect();
+                    let bids: Vec<Level> = book
+                        .bids
+                        .iter()
+                        .rev()
+                        .map(|(price, quantity)| Level {
+                            price: *price,
+                            quantity: *quantity,
+                        })
+                        .collect();
 
-                let asks: Vec<Level> = book.asks
-                .iter()
-                .map(|(price, quantity)| Level {
-                    price: *price,
-                    quantity: *quantity,
-                })
-                .collect();
-                
-                let snapshot = OrderbookSnapshot {
-                    market_id,
-                    bids,
-                    asks,
-                };
+                    let asks: Vec<Level> = book
+                        .asks
+                        .iter()
+                        .map(|(price, quantity)| Level {
+                            price: *price,
+                            quantity: *quantity,
+                        })
+                        .collect();
 
-                let _ = reply.send(Ok(snapshot));
+                    let snapshot = OrderbookSnapshot {
+                        market_id,
+                        bids,
+                        asks,
+                    };
 
-                },
-                Command::GetUserOpenOrders(user_id,reply )=>{
+                    let _ = reply.send(Ok(snapshot));
+                }
+                Command::GetUserOpenOrders(user_id, reply) => {
                     let mut user_orders = Vec::new();
 
-                    for book in orderbooks.values(){
-                        for order in book.orders.values(){
+                    for book in orderbooks.values() {
+                        for order in book.orders.values() {
                             if order.user_id == user_id {
                                 user_orders.push(order.clone());
                             }
                         }
                     }
-                    
+
                     let _ = reply.send(Ok(user_orders));
-                },
-                Command::GetOrderStatus(order_id, reply ) => {
+                }
+                Command::GetOrderStatus(order_id, reply) => {
                     let mut found_order: Option<Order> = None;
 
                     for book in orderbooks.values() {
@@ -280,7 +400,118 @@ pub fn spawn_orderbook_actor(user_store: UserStore, market_store: MarketStore) -
                             let _ = reply.send(Err("Order not found".into()));
                         }
                     }
-                },
+                }
+                Command::AddUser(user, reply) => {
+                    let id = user.id;
+                    users.insert(id, user.clone());
+                    let _ = reply.send(Some(user));
+                }
+                Command::GetUserById(id, reply) => {
+                    let user = users.get(&id).cloned();
+                    let _ = reply.send(user);
+                }
+                Command::GetUserByEmail(email, reply) => {
+                    let user = users.values().find(|u| u.email == email).cloned();
+                    let _ = reply.send(user);
+                }
+                Command::GetBalance(id, reply) => {
+                    let res = users
+                        .get(&id)
+                        .map(|u| Ok(u.balance))
+                        .unwrap_or_else(|| Err("User not found".into()));
+                    let _ = reply.send(res);
+                }
+                Command::UpdateBalance(id, amount, reply) => {
+                    if let Some(u) = users.get_mut(&id) {
+                        u.balance += amount;
+                        let _ = reply.send(Ok(()));
+                    } else {
+                        let _ = reply.send(Err("User not found".into()));
+                    }
+                }
+                Command::GetPosition(user_id, market_id, reply) => {
+                    let position = users
+                        .get(&user_id)
+                        .and_then(|u| u.positions.get(&market_id))
+                        .copied()
+                        .unwrap_or(0);
+
+                    let _ = reply.send(Ok(position));
+                }
+                Command::UpdatePosition(user_id, market_id, amount, reply) => {
+                    if let Some(user) = users.get_mut(&user_id) {
+                        let current = user.positions.entry(market_id).or_insert(0);
+
+                        if amount < 0 && (*current as i64) < -amount {
+                            let _ = reply.send(Err("Insufficient position".into()));
+                        } else {
+                            *current = ((*current as i64) + amount) as u64;
+                            if *current == 0 {
+                                user.positions.remove(&market_id);
+                            }
+                            let _ = reply.send(Ok(()));
+                        }
+                    } else {
+                        let _ = reply.send(Err("User not found".into()));
+                    }
+                }
+                Command::CheckPositionSufficient(user_id, market_id, required_qty, reply) => {
+                    let position = users
+                        .get(&user_id)
+                        .and_then(|u| u.positions.get(&market_id))
+                        .copied()
+                        .unwrap_or(0);
+
+                    let _ = reply.send(Ok(position >= required_qty));
+                }
+                Command::CreateSplitPosition(user_id, market1_id, market2_id, amount, reply) => {
+                    let Some(user) = users.get_mut(&user_id) else {
+                        let _ = reply.send(Err("User not found".into()));
+                        continue;
+                    };
+
+                    if user.balance < amount as i64 {
+                        let _ = reply.send(Err("Insufficient balance".into()));
+                        continue;
+                    }
+
+                    user.balance -= amount as i64;
+                    *user.positions.entry(market1_id).or_insert(0) += amount;
+                    *user.positions.entry(market2_id).or_insert(0) += amount;
+
+                    let _ = reply.send(Ok(()));
+                }
+                Command::MergePosition(user_id, market1_id, market2_id, reply) => {
+                    let Some(user) = users.get_mut(&user_id) else {
+                        let _ = reply.send(Err("User not found".into()));
+                        continue;
+                    };
+
+                    let position1 = user.positions.get(&market1_id).copied().unwrap_or(0);
+                    let position2 = user.positions.get(&market2_id).copied().unwrap_or(0);
+
+                    let merge_qty = position1.min(position2);
+                    if merge_qty == 0 {
+                        let _ = reply.send(Err("Cannot merge, Insufficient positions".into()));
+                        continue;
+                    }
+
+                    user.positions
+                        .entry(market1_id)
+                        .and_modify(|p| *p -= merge_qty);
+                    if user.positions[&market1_id] == 0 {
+                        user.positions.remove(&market1_id);
+                    }
+
+                    user.positions
+                        .entry(market2_id)
+                        .and_modify(|p| *p -= merge_qty);
+                    if user.positions[&market2_id] == 0 {
+                        user.positions.remove(&market2_id);
+                    }
+
+                    let _ = reply.send(Ok(()));
+                }
             }
         }
     });

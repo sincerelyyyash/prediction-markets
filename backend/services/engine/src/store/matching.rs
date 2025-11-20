@@ -1,37 +1,41 @@
+use std::collections::HashMap;
+
 use crate::store::market::MarketStore;
 use crate::types::market_types::MarketStatus;
-use crate::types::orderbook_types::{OrderbookData, Order, OrderSide};
-use crate::store::user::UserStore;
+use crate::types::orderbook_types::{Order, OrderSide, OrderbookData};
+use crate::types::user_types::User;
 
 pub async fn match_order(
     order: &mut Order,
     book: &mut OrderbookData,
-    user_store: &UserStore,
-    market_store: &MarketStore
+    users: &mut HashMap<u64, User>,
+    market_store: &MarketStore,
 ) -> Result<(), String> {
-    
     let Some(market) = market_store.get_market(order.market_id) else {
         return Err("Market not found".into());
     };
 
-    if market.status != MarketStatus::Active{
+    if market.status != MarketStatus::Active {
         return Err("Market not active to trade".into());
     };
 
     match order.side {
-        OrderSide::Bid=> match_bid_against_asks(order, book, user_store).await,
-        OrderSide::Ask => match_ask_against_bids(order, book, user_store).await, 
+        OrderSide::Bid => match_bid_against_asks(order, book, users).await,
+        OrderSide::Ask => match_ask_against_bids(order, book, users).await,
     }
 }
 
-async fn match_bid_against_asks( order: &mut Order, book: &mut OrderbookData, user_store: &UserStore) -> Result<(), String> {
-
+async fn match_bid_against_asks(
+    order: &mut Order,
+    book: &mut OrderbookData,
+    users: &mut HashMap<u64, User>,
+) -> Result<(), String> {
     while order.remaining_qty > 0 {
         let Some((&ask_price, _)) = book.asks.first_key_value() else {
             break;
         };
 
-        if order.price <ask_price {
+        if order.price < ask_price {
             break;
         }
 
@@ -56,18 +60,19 @@ async fn match_bid_against_asks( order: &mut Order, book: &mut OrderbookData, us
 
             let price_diff = (order.price as i64) - (fill_price as i64);
             let refund = price_diff * (fill_qty as i64);
-            user_store.update_balance(order.user_id, refund).await
-            .map_err(|e| format!("failed to update taker balance {}",e))?;
+            update_balance(users, order.user_id, refund)?;
 
-            user_store.update_position(order.user_id, order.market_id, fill_qty as i64).await
-            .map_err(|e| format!("failed to update taker position: {}", e))?;
+            update_position(users, order.user_id, order.market_id, fill_qty as i64)?;
 
             let maker_revenue = (fill_price as i64) * (fill_qty as i64);
-            user_store.update_balance(maker_order.user_id, maker_revenue).await
-            .map_err(|e| format!("failed to update maker balance: {}", e))?;
+            update_balance(users, maker_order.user_id, maker_revenue)?;
 
-            user_store.update_position(maker_order.user_id, maker_order.market_id, -(fill_qty as i64)).await
-            .map_err(|e| format!("Failed to update maker position: {}", e))?;
+            update_position(
+                users,
+                maker_order.user_id,
+                maker_order.market_id,
+                -(fill_qty as i64),
+            )?;
 
             if maker_order.remaining_qty == 0 {
                 book.orders.remove(&maker_order_id);
@@ -81,19 +86,19 @@ async fn match_bid_against_asks( order: &mut Order, book: &mut OrderbookData, us
             } else {
                 break;
             }
-             if order.remaining_qty == 0 {
+            if order.remaining_qty == 0 {
                 break;
-             }
-
-
+            }
         }
-
     }
     Ok(())
 }
 
-async fn match_ask_against_bids(order: &mut Order, book: &mut OrderbookData, user_store: &UserStore) -> Result<(), String> {
-
+async fn match_ask_against_bids(
+    order: &mut Order,
+    book: &mut OrderbookData,
+    users: &mut HashMap<u64, User>,
+) -> Result<(), String> {
     while order.remaining_qty > 0 {
         let Some((&bid_price, _)) = book.bids.last_key_value() else {
             break;
@@ -123,19 +128,20 @@ async fn match_ask_against_bids(order: &mut Order, book: &mut OrderbookData, use
             *book.bids.get_mut(&bid_price).unwrap() -= fill_qty;
 
             let payment = (fill_price as i64) * (fill_qty as i64);
-            user_store.update_balance(order.user_id, payment).await
-            .map_err(|e| format!("Failed to update taker balance: {}", e))?;
+            update_balance(users, order.user_id, payment)?;
 
-            user_store.update_position(order.user_id, order.market_id, -(fill_qty as i64)).await
-            .map_err(|e| format!("failed to update position: {}", e))?;
-            
+            update_position(users, order.user_id, order.market_id, -(fill_qty as i64))?;
+
             let maker_price_diff = (maker_order.price as i64) - (fill_price as i64);
             let maker_refund = maker_price_diff * (fill_qty as i64);
-            user_store.update_balance(maker_order.user_id, maker_refund).await
-            .map_err(|e| format!("failed to update balance: {}", e))?;
+            update_balance(users, maker_order.user_id, maker_refund)?;
 
-            user_store.update_position(maker_order.user_id, maker_order.market_id, fill_qty as i64).await
-            .map_err(|e| format!("failed to update position: {}", e))?;
+            update_position(
+                users,
+                maker_order.user_id,
+                maker_order.market_id,
+                fill_qty as i64,
+            )?;
 
             if maker_order.remaining_qty == 0 {
                 book.orders.remove(&maker_order_id);
@@ -154,6 +160,34 @@ async fn match_ask_against_bids(order: &mut Order, book: &mut OrderbookData, use
                 break;
             }
         }
+    }
+    Ok(())
+}
+
+fn update_balance(users: &mut HashMap<u64, User>, user_id: u64, amount: i64) -> Result<(), String> {
+    let Some(user) = users.get_mut(&user_id) else {
+        return Err("User not found".into());
+    };
+    user.balance += amount;
+    Ok(())
+}
+
+fn update_position(
+    users: &mut HashMap<u64, User>,
+    user_id: u64,
+    market_id: u64,
+    amount: i64,
+) -> Result<(), String> {
+    let Some(user) = users.get_mut(&user_id) else {
+        return Err("User not found".into());
+    };
+    let current = user.positions.entry(market_id).or_insert(0);
+    if amount < 0 && (*current as i64) < -amount {
+        return Err("Insufficient position".into());
+    }
+    *current = ((*current as i64) + amount) as u64;
+    if *current == 0 {
+        user.positions.remove(&market_id);
     }
     Ok(())
 }
