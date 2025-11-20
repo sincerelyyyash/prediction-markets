@@ -1,5 +1,5 @@
 [workspace]
-members = ["packages/kafka-broker",
+members = ["packages/redis-client",
     "services/engine",
     "services/server"
 ]
