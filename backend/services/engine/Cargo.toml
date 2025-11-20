@@ -7,3 +7,12 @@ edition = "2024"
 serde = { version = "1", features = ["derive"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
 uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
+tokio-test = "0.4"
+rand = "0.8"
+
+[[bench]]
+name = "orderbook_benchmark"
+harness = false
