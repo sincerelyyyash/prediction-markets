@@ -8,7 +8,10 @@ use sqlx::postgres::PgPoolOptions;
 use std::env;
 use dotenvy::dotenv;
 use crate::controllers::user_controller::{signup_user, signin_user};
-use crate::controllers::admin_controller::{signin_admin};
+use crate::controllers::admin_auth_controller::{signin_admin};
+use crate::controllers::admin_event_controller::{create_event,resolve_event, update_event, delete_event};
+use crate::controllers::user_event_controller::{get_all_events, get_event_by_id};
+
 
 async fn health()-> impl Responder {
     HttpResponse::Ok()
