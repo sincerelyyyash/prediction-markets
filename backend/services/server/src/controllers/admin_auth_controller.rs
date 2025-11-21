@@ -35,7 +35,7 @@ pub async fn signin_admin(db_pool: web::Data<PgPool>, req: web::Json<LoginUserIn
                 "message": "Invalid email or user does not exist"
             }));
         }
-        Err(e) => {
+        Err(_) => {
             return HttpResponse::InternalServerError().json(json!({
                 "status": "error",
                 "message":"Database query failed"

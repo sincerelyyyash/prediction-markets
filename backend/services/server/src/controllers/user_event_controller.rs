@@ -5,8 +5,6 @@ use sqlx::PgPool;
 use redis_client::RedisManager;
 use log::warn;
 
-
-
 #[get("/events")]
 pub async fn get_all_events(db_pool: web::Data<PgPool>) -> impl Responder {
     const CACHE_KEY: &str = "events:all";
@@ -20,7 +18,7 @@ pub async fn get_all_events(db_pool: web::Data<PgPool>) -> impl Responder {
                 }
             }
             Ok(None) => {
-                warn!("Redis cache read error: {:?}", e);
+                warn!("Redis cache miss for {}", CACHE_KEY);
             }
             Err(e) => {
                 warn!("Redis cache read error: {:?}", e);
@@ -114,7 +112,6 @@ pub async fn get_event_by_id(db_pool: web::Data<PgPool>, path: web::Path<u64>) -
     const CACHE_TTL: i64 = 86400; // 24 hours
     let cache_key = format!("event:{}", event_id);
 
-
     if let Some(redis_manager) = RedisManager::global() {
         match redis_manager.get(&cache_key).await {
             Ok(Some(cached_data)) => {
@@ -123,15 +120,13 @@ pub async fn get_event_by_id(db_pool: web::Data<PgPool>, path: web::Path<u64>) -
                 }
             }
             Ok(None) => {
-                warn!("Redis cache read error: {:?}", e);
+                warn!("Redis cache miss for {}", cache_key);
             }
             Err(e) => {
                 warn!("Redis cache read error: {:?}", e);
             }
         }
     }
-
-
     let event = match sqlx::query_as!(
         EventTable,
         r#"
