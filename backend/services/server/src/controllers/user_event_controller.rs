@@ -2,11 +2,31 @@ use actix_web::{get, web, HttpResponse, Responder};
 use crate::models::market_model::{EventTable, OutcomeTable, MarketTable};
 use serde_json::json;
 use sqlx::PgPool;
+use redis_client::RedisManager;
+use log::warn;
 
 
 
 #[get("/events")]
 pub async fn get_all_events(db_pool: web::Data<PgPool>) -> impl Responder {
+    const CACHE_KEY: &str = "events:all";
+    const CACHE_TTL: i64 = 86400; // 24 hours
+
+    if let Some(redis_manager) = RedisManager::global() {
+        match redis_manager.get(CACHE_KEY).await {
+            Ok(Some(cached_data)) => {
+                if let Ok(response) = serde_json::from_str::<serde_json::Value>(&cached_data) {
+                    return HttpResponse::Ok().json(response);
+                }
+            }
+            Ok(None) => {
+                warn!("Redis cache read error: {:?}", e);
+            }
+            Err(e) => {
+                warn!("Redis cache read error: {:?}", e);
+            }
+        }
+    }
     let events = match sqlx::query_as!(
         EventTable,
         r#"
@@ -70,17 +90,47 @@ pub async fn get_all_events(db_pool: web::Data<PgPool>) -> impl Responder {
         }));
     }
 
-    HttpResponse::Ok().json(json!({
+    let response_data = json!({
         "status": "success",
         "message": "Events fetched successfully",
         "events": events_with_outcomes,
         "count": events.len()
-    }))
+    });
+
+    if let Some(redis_manager) = RedisManager::global() {
+        if let Ok(response_json) = serde_json::to_string(&response_data) {
+            if let Err(e) = redis_manager.set_with_ttl(CACHE_KEY, &response_json, CACHE_TTL).await {
+                warn!("Failed to cache events data: {:?}", e);
+            }
+        }
+    }
+
+    HttpResponse::Ok().json(response_data)
 }
 
 #[get("/events/{event_id}")]
 pub async fn get_event_by_id(db_pool: web::Data<PgPool>, path: web::Path<u64>) -> impl Responder {
     let event_id = path.into_inner() as i64;
+    const CACHE_TTL: i64 = 86400; // 24 hours
+    let cache_key = format!("event:{}", event_id);
+
+
+    if let Some(redis_manager) = RedisManager::global() {
+        match redis_manager.get(&cache_key).await {
+            Ok(Some(cached_data)) => {
+                if let Ok(response) = serde_json::from_str::<serde_json::Value>(&cached_data) {
+                    return HttpResponse::Ok().json(response);
+                }
+            }
+            Ok(None) => {
+                warn!("Redis cache read error: {:?}", e);
+            }
+            Err(e) => {
+                warn!("Redis cache read error: {:?}", e);
+            }
+        }
+    }
+
 
     let event = match sqlx::query_as!(
         EventTable,
@@ -157,7 +207,7 @@ pub async fn get_event_by_id(db_pool: web::Data<PgPool>, path: web::Path<u64>) -
         }
     };
 
-    HttpResponse::Ok().json(json!({
+    let response_data = json!({
         "status": "success",
         "message": "Event fetched successfully",
         "event": {
@@ -190,5 +240,15 @@ pub async fn get_event_by_id(db_pool: web::Data<PgPool>, path: web::Path<u64>) -
                 "markets": outcome_markets
             })
         }).collect::<Vec<_>>()
-    }))
+    });
+
+    if let Some(redis_manager) = RedisManager::global() {
+        if let Ok(response_json) = serde_json::to_string(&response_data) {
+            if let Err(e) = redis_manager.set_with_ttl(&cache_key, &response_json, CACHE_TTL).await {
+                warn!("Failed to cache event data: {:?}", e);
+            }
+        }
+    }
+
+    HttpResponse::Ok().json(response_data)
 }

@@ -7,6 +7,7 @@ use actix_web::{App, HttpResponse, HttpServer, Responder, web};
 use sqlx::postgres::PgPoolOptions;
 use std::env;
 use dotenvy::dotenv;
+use redis_client::RedisManager;
 use crate::controllers::user_controller::{signup_user, signin_user};
 use crate::controllers::admin_auth_controller::{signin_admin};
 use crate::controllers::admin_event_controller::{create_event,resolve_event, update_event, delete_event};
@@ -33,6 +34,18 @@ async fn run()-> std::io::Result<()> {
     .expect("Failed to create Postgres pool");
 
     println!("Connected to Postgres Database");
+
+    // Initialize Redis
+    let redis_url = env::var("REDIS_URL")
+        .unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
+    
+    let _redis_manager = RedisManager::init_global(&redis_url)
+        .expect("Failed to initialize Redis manager");
+    
+    _redis_manager.connect().await
+        .expect("Failed to connect to Redis");
+    
+    println!("Connected to Redis");
 
 
     HttpServer::new(move|| App::new()

@@ -5,6 +5,8 @@ use serde_json::json;
 use validator::Validate;
 use sqlx::PgPool;
 use chrono::Utc;
+use redis_client::RedisManager;
+use log::warn;
 
 
 #[post ("/create-event")]
@@ -131,6 +133,13 @@ pub async fn create_event(db_pool: web::Data<PgPool>, req: web::Json<CreateEvent
 
     match tx.commit().await {
         Ok(_) => {
+            
+            if let Some(redis_manager) = RedisManager::global() {
+                if let Err(e) = redis_manager.delete("events:all").await {
+                    warn!("Failed to invalidate cache after event creation: {:?}", e);
+                }
+            }
+
             HttpResponse::Created().json(json!({
                 "status":"success",
                 "message": "Event created successfully",
@@ -314,13 +323,25 @@ pub async fn resolve_event(db_pool: web::Data<PgPool>, req: web::Json<ResolveEve
     }
 
     match tx.commit().await {
-        Ok(_) => HttpResponse::Ok().json(json!({
-            "status":"success",
-            "message": "Event resolved successfully",
-            "event_id": event.id,
-            "winning_outcome_id": winning_outcome.id,
-            "resolved_at": resolved_at_value
-        })),
+        Ok(_) => {
+            if let Some(redis_manager) = RedisManager::global() {
+                let cache_key = format!("event:{}", event.id);
+                if let Err(e) = redis_manager.delete("events:all").await {
+                    warn!("Failed to invalidate events:all cache after resolution: {:?}", e);
+                }
+                if let Err(e) = redis_manager.delete(&cache_key).await {
+                    warn!("Failed to invalidate event cache after resolution: {:?}", e);
+                }
+            }
+
+            HttpResponse::Ok().json(json!({
+                "status":"success",
+                "message": "Event resolved successfully",
+                "event_id": event.id,
+                "winning_outcome_id": winning_outcome.id,
+                "resolved_at": resolved_at_value
+            }))
+        }
         Err(_) => HttpResponse::InternalServerError().json(json!({
             "status": "error",
             "message": "Failed to finalise resolution"
@@ -412,6 +433,16 @@ pub async fn update_event(db_pool: web::Data<PgPool>, req: web::Json<UpdateEvent
             }));
         }
     };
+
+    if let Some(redis_manager) = RedisManager::global() {
+        let cache_key = format!("event:{}", updated_event.id);
+        if let Err(e) = redis_manager.delete("events:all").await {
+            warn!("Failed to invalidate events:all cache after update: {:?}", e);
+        }
+        if let Err(e) = redis_manager.delete(&cache_key).await {
+            warn!("Failed to invalidate event cache after update: {:?}", e);
+        }
+    }
 
     HttpResponse::Ok().json(json!({
         "status": "success",
@@ -538,11 +569,23 @@ pub async fn delete_event(db_pool: web::Data<PgPool>, req: web::Json<DeleteEvent
     }
 
     match tx.commit().await {
-        Ok(_) => HttpResponse::Ok().json(json!({
-            "status": "success",
-            "message": "Event deleted succesfully",
-            "event_id": event.id 
-        })),
+        Ok(_) => {
+            if let Some(redis_manager) = RedisManager::global() {
+                let cache_key = format!("event:{}", event.id);
+                if let Err(e) = redis_manager.delete("events:all").await {
+                    warn!("Failed to invalidate events:all cache after deletion: {:?}", e);
+                }
+                if let Err(e) = redis_manager.delete(&cache_key).await {
+                    warn!("Failed to invalidate event cache after deletion: {:?}", e);
+                }
+            }
+
+            HttpResponse::Ok().json(json!({
+                "status": "success",
+                "message": "Event deleted succesfully",
+                "event_id": event.id 
+            }))
+        }
         Err(_) => HttpResponse::InternalServerError().json(json!({
             "status": "error",
             "message": "Failed to finalize deletion"
