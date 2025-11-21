@@ -1,1 +1,2 @@
-pub mod redis_client;
+pub mod redis_manager;
+pub use redis_manager::RedisManager;

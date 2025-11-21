@@ -51,9 +51,19 @@ impl RedisManager {
             .await
     }
 
+    pub async fn set_with_ttl(&self, key: &str, value: &str, seconds: i64) -> Result<(), RedisError> {
+        self.client.set::<(), _, _>(key, value, None, None, false).await?;
+        self.client.expire::<(), _>(key, seconds).await?;
+        Ok(())
+    }
+
     pub async fn get(&self, key: &str) -> Result<Option<String>, RedisError> {
         let value: Option<String> = self.client.get(key).await?;
         Ok(value)
+    }
+
+    pub async fn delete(&self, key: &str) -> Result<(), RedisError> {
+        self.client.del::<(), _>(key).await
     }
 
     pub async fn push_queue(&self, queue: &str, value: &str) -> Result<(), RedisError> {
@@ -101,7 +111,7 @@ impl RedisManager {
                 }
             });
 
-            guard.insert(channel_key, task);
+            (*guard).insert(channel_key, task);
             Ok(())
         }
 
