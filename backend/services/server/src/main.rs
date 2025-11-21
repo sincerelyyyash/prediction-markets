@@ -39,6 +39,13 @@ async fn run()-> std::io::Result<()> {
     .app_data(web::Data::new(pool.clone()))
     .service(signup_user)
     .service(signin_user)
+    .service(signin_admin)
+    .service(create_event)
+    .service(update_event)
+    .service(resolve_event)
+    .service(delete_event)
+    .service(get_all_events)
+    .service(get_event_by_id)
     .route("/health", web::get().to(health)))
     .bind("127.0.0.1:8000")?
     .run()
