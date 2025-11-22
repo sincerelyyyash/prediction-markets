@@ -2219,6 +2219,8 @@ dependencies = [
  "futures",
  "log",
  "once_cell",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 
