@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 use tokio::sync::{mpsc, oneshot};
 use uuid::Uuid;
+use chrono::Utc;
 
 use crate::store::balance::reserve_balance;
 use crate::store::balance::return_reserved_balance;
@@ -10,8 +11,13 @@ use crate::store::market::MarketStore;
 use crate::store::matching::match_order;
 use crate::store::orderbook_actions::add_order_to_book;
 use crate::store::orderbook_actions::remove_order_from_book;
-use crate::types::orderbook_types::{Level, Order, OrderbookData, OrderbookSnapshot};
+use crate::types::orderbook_types::{Level, Order, OrderbookData, OrderbookSnapshot, OrderSide};
 use crate::types::user_types::User;
+use crate::types::db_event_types::{
+    DbEvent, OrderPlacedEvent, OrderCancelledEvent, OrderModifiedEvent,
+    PositionUpdatedEvent, BalanceUpdatedEvent,
+};
+use crate::services::db_event_publisher::publish_db_event;
 
 #[derive(Debug)]
 enum Command {
@@ -31,6 +37,7 @@ enum Command {
     GetBalance(u64, oneshot::Sender<Result<i64, String>>),
     UpdateBalance(u64, i64, oneshot::Sender<Result<(), String>>),
     GetPosition(u64, u64, oneshot::Sender<Result<u64, String>>),
+    GetUserPositions(u64, oneshot::Sender<Result<HashMap<u64, u64>, String>>),
     UpdatePosition(u64, u64, i64, oneshot::Sender<Result<(), String>>),
     CheckPositionSufficient(u64, u64, u64, oneshot::Sender<Result<bool, String>>),
     CreateSplitPosition(u64, u64, u64, u64, oneshot::Sender<Result<(), String>>),
@@ -137,6 +144,16 @@ impl Orderbook {
             .await;
         rx.await
             .unwrap_or_else(|_| Err("Failed to get positions".into()))
+    }
+
+    pub async fn get_user_positions(&self, user_id: u64) -> Result<HashMap<u64, u64>, String> {
+        let(tx, rx) = oneshot::channel();
+        let _ = self
+            .tx
+            .send(Command::GetUserPositions(user_id, tx))
+            .await;
+        rx.await
+            .unwrap_or_else(|_| Err("Failed to get user positions".into()))
     }
 
     pub async fn update_position(
@@ -249,6 +266,21 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                         let _ = return_unused_reservation(&order, &mut users).await;
                     }
 
+                    let side_str = match order.side {
+                        OrderSide::Bid => "Bid",
+                        OrderSide::Ask => "Ask",
+                    };
+                    let _ = publish_db_event(DbEvent::OrderPlaced(OrderPlacedEvent {
+                        order_id: id,
+                        user_id: order.user_id,
+                        market_id: order.market_id,
+                        side: side_str.to_string(),
+                        price: order.price,
+                        original_qty: order.original_qty,
+                        remaining_qty: order.remaining_qty,
+                        timestamp: Utc::now(),
+                    })).await;
+
                     let _ = reply.send(Ok(order));
                 }
                 Command::CancelOrder(market_id, order_id, reply) => {
@@ -265,6 +297,13 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                     remove_order_from_book(order_id, &order, book);
 
                     let _ = return_reserved_balance(&order, &mut users).await;
+
+                    let _ = publish_db_event(DbEvent::OrderCancelled(OrderCancelledEvent {
+                        order_id,
+                        user_id: order.user_id,
+                        market_id: order.market_id,
+                        timestamp: Utc::now(),
+                    })).await;
 
                     let _ = reply.send(Ok(order));
                 }
@@ -307,6 +346,16 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                     } else {
                         let _ = return_unused_reservation(&order, &mut users).await;
                     }
+
+                    let _ = publish_db_event(DbEvent::OrderModified(OrderModifiedEvent {
+                        order_id,
+                        user_id: order.user_id,
+                        market_id: order.market_id,
+                        price: order.price,
+                        original_qty: order.original_qty,
+                        remaining_qty: order.remaining_qty,
+                        timestamp: Utc::now(),
+                    })).await;
 
                     let _ = reply.send(Ok(order));
                 }
@@ -424,6 +473,11 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                 Command::UpdateBalance(id, amount, reply) => {
                     if let Some(u) = users.get_mut(&id) {
                         u.balance += amount;
+                        let _ = publish_db_event(DbEvent::BalanceUpdated(BalanceUpdatedEvent {
+                            user_id: id,
+                            balance: u.balance,
+                            timestamp: Utc::now(),
+                        })).await;
                         let _ = reply.send(Ok(()));
                     } else {
                         let _ = reply.send(Err("User not found".into()));
@@ -438,6 +492,13 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
 
                     let _ = reply.send(Ok(position));
                 }
+                Command::GetUserPositions(user_id, reply) => {
+                    let positions = users
+                        .get(&user_id)
+                        .map(|u| u.positions.clone())
+                        .unwrap_or_default();
+                    let _ = reply.send(Ok(positions));
+                }
                 Command::UpdatePosition(user_id, market_id, amount, reply) => {
                     if let Some(user) = users.get_mut(&user_id) {
                         let current = user.positions.entry(market_id).or_insert(0);
@@ -446,9 +507,18 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                             let _ = reply.send(Err("Insufficient position".into()));
                         } else {
                             *current = ((*current as i64) + amount) as u64;
-                            if *current == 0 {
+                            let final_qty = if *current == 0 {
                                 user.positions.remove(&market_id);
-                            }
+                                0
+                            } else {
+                                *current
+                            };
+                            let _ = publish_db_event(DbEvent::PositionUpdated(PositionUpdatedEvent {
+                                user_id,
+                                market_id,
+                                quantity: final_qty,
+                                timestamp: Utc::now(),
+                            })).await;
                             let _ = reply.send(Ok(()));
                         }
                     } else {
@@ -479,6 +549,24 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                     *user.positions.entry(market1_id).or_insert(0) += amount;
                     *user.positions.entry(market2_id).or_insert(0) += amount;
 
+                    let _ = publish_db_event(DbEvent::BalanceUpdated(BalanceUpdatedEvent {
+                        user_id,
+                        balance: user.balance,
+                        timestamp: Utc::now(),
+                    })).await;
+                    let _ = publish_db_event(DbEvent::PositionUpdated(PositionUpdatedEvent {
+                        user_id,
+                        market_id: market1_id,
+                        quantity: user.positions[&market1_id],
+                        timestamp: Utc::now(),
+                    })).await;
+                    let _ = publish_db_event(DbEvent::PositionUpdated(PositionUpdatedEvent {
+                        user_id,
+                        market_id: market2_id,
+                        quantity: user.positions[&market2_id],
+                        timestamp: Utc::now(),
+                    })).await;
+
                     let _ = reply.send(Ok(()));
                 }
                 Command::MergePosition(user_id, market1_id, market2_id, reply) => {
@@ -499,16 +587,35 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                     user.positions
                         .entry(market1_id)
                         .and_modify(|p| *p -= merge_qty);
-                    if user.positions[&market1_id] == 0 {
+                    let pos1_final = if user.positions[&market1_id] == 0 {
                         user.positions.remove(&market1_id);
-                    }
+                        0
+                    } else {
+                        user.positions[&market1_id]
+                    };
 
                     user.positions
                         .entry(market2_id)
                         .and_modify(|p| *p -= merge_qty);
-                    if user.positions[&market2_id] == 0 {
+                    let pos2_final = if user.positions[&market2_id] == 0 {
                         user.positions.remove(&market2_id);
-                    }
+                        0
+                    } else {
+                        user.positions[&market2_id]
+                    };
+
+                    let _ = publish_db_event(DbEvent::PositionUpdated(PositionUpdatedEvent {
+                        user_id,
+                        market_id: market1_id,
+                        quantity: pos1_final,
+                        timestamp: Utc::now(),
+                    })).await;
+                    let _ = publish_db_event(DbEvent::PositionUpdated(PositionUpdatedEvent {
+                        user_id,
+                        market_id: market2_id,
+                        quantity: pos2_final,
+                        timestamp: Utc::now(),
+                    })).await;
 
                     let _ = reply.send(Ok(()));
                 }
