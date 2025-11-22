@@ -67,3 +67,13 @@ pub fn extract_user_id(req: &HttpRequest) -> Result<i64, HttpResponse> {
             "message": "Invalid or expired token"
         })))
 }
+
+pub fn get_user_id_from_extensions(req: &HttpRequest) -> Result<i64, HttpResponse> {
+    req.extensions()
+        .get::<i64>()
+        .copied()
+        .ok_or_else(|| HttpResponse::Unauthorized().json(json!({
+            "status": "error",
+            "message": "User ID not found in request. Ensure auth middleware is applied."
+        })))
+}
