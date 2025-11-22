@@ -1,6 +1,9 @@
 use chrono::{Duration, Utc};
-use jsonwebtoken::{encode, EncodingKey, Header};
+use jsonwebtoken::{encode, decode, EncodingKey, DecodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
+use actix_web::{HttpRequest, HttpResponse};
+use serde_json::json;
+use std::env;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct Claims {
@@ -24,4 +27,43 @@ pub fn create_jwt(id: &i64, secret: &str) -> Result<String, jsonwebtoken::errors
         &claims,
         &EncodingKey::from_secret(secret.as_ref()),
     )
+}
+
+pub fn verify_jwt(token: &str, secret: &str) -> Result<i64, jsonwebtoken::errors::Error> {
+    let decoding_key = DecodingKey::from_secret(secret.as_ref());
+    let validation = Validation::default();
+    let token_data = decode::<Claims>(token, &decoding_key, &validation)?;
+    Ok(token_data.claims.sub)
+}
+
+pub fn extract_user_id(req: &HttpRequest) -> Result<i64, HttpResponse> {
+    let auth_header = req.headers().get("Authorization")
+        .ok_or_else(|| HttpResponse::Unauthorized().json(json!({
+            "status": "error",
+            "message": "Missing Authorization header"
+        })))?;
+
+    let token_str = auth_header.to_str()
+        .map_err(|_| HttpResponse::Unauthorized().json(json!({
+            "status": "error",
+            "message": "Invalid Authorization header"
+        })))?;
+
+    let token = token_str.strip_prefix("Bearer ")
+        .ok_or_else(|| HttpResponse::Unauthorized().json(json!({
+            "status": "error",
+            "message": "Invalid token format"
+        })))?;
+
+    let jwt_secret = env::var("JWT_SECRET")
+        .map_err(|_| HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "JWT secret not configured"
+        })))?;
+
+    verify_jwt(token, &jwt_secret)
+        .map_err(|_| HttpResponse::Unauthorized().json(json!({
+            "status": "error",
+            "message": "Invalid or expired token"
+        })))
 }

@@ -14,6 +14,9 @@ env_logger = "0.11"
 log = "0.4"
 jsonwebtoken = { version = "10", features = ["rust_crypto"] }
 dotenvy = "0.15"
-sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "chrono"] }
 chrono = { version = "0.4.42", features = ["serde"] }
 redis-client = { path = "../../packages/redis-client" }
+uuid = { version = "1", features = ["v4"] }
+once_cell = "1"
+fred = "9"
+engine = { path = "../engine" }
