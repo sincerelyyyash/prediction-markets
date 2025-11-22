@@ -1,15 +1,16 @@
 use actix_web::{post, web, HttpResponse, Responder};
 use crate::types::auth_types::{LoginUserInput};
-use crate::models::admin_model::Admin;
 use crate::utils::jwt::{create_jwt};
+use crate::utils::redis_stream::send_request_and_wait;
+use redis_client::RedisRequest;
 use bcrypt::{verify};
 use serde_json::json;
 use validator::Validate;
-use sqlx::PgPool;
+use uuid::Uuid;
 use std::env;
 
 #[post ("admin/signin")]
-pub async fn signin_admin(db_pool: web::Data<PgPool>, req: web::Json<LoginUserInput>) -> impl Responder {
+pub async fn signin_admin(req: web::Json<LoginUserInput>) -> impl Responder {
     if let Err(e) = req.validate(){
         return HttpResponse::BadRequest().json(json!({
             "status": "error",
@@ -17,25 +18,34 @@ pub async fn signin_admin(db_pool: web::Data<PgPool>, req: web::Json<LoginUserIn
         }))
     }
 
-    let result = sqlx::query_as!(
-        Admin,
-        r#"
-        SELECT id, name, email, password FROM admins WHERE email =$1
-        "#,
-        req.email,
-    )
-    .fetch_optional(db_pool.get_ref())
-    .await;
+    let request_id = Uuid::new_v4().to_string();
+    let admin_request = RedisRequest::new(
+        "db_worker",
+        "get_admin_by_email",
+        "Get admin by email",
+        json!({
+            "email": req.email,
+        }),
+    );
 
-    let existing_admin = match result {
-        Ok(Some(u)) => u,
-        Ok(None) => {
-            return HttpResponse::Unauthorized().json(json!({
-                "status":"error",
-                "message": "Invalid email or user does not exist"
-            }));
+    let admin_response = match send_request_and_wait(request_id, admin_request, 10).await {
+        Ok(response) => {
+            if response.status_code >= 400 {
+                if response.status_code == 404 {
+                    return HttpResponse::Unauthorized().json(json!({
+                        "status":"error",
+                        "message": "Invalid email or user does not exist"
+                    }));
+                }
+                return HttpResponse::InternalServerError().json(json!({
+                    "status": "error",
+                    "message":"Database query failed"
+                }));
+            }
+            response
         }
-        Err(_) => {
+        Err(e) => {
+            eprintln!("Failed to fetch admin: {}", e);
             return HttpResponse::InternalServerError().json(json!({
                 "status": "error",
                 "message":"Database query failed"
@@ -43,7 +53,27 @@ pub async fn signin_admin(db_pool: web::Data<PgPool>, req: web::Json<LoginUserIn
         }
     };
 
-    let is_valid = verify(&req.password, &existing_admin.password).unwrap_or(false);
+    let admin_id = match admin_response.data["id"].as_i64() {
+        Some(id) => id,
+        None => {
+            return HttpResponse::InternalServerError().json(json!({
+                "status": "error",
+                "message": "Invalid admin data"
+            }));
+        }
+    };
+
+    let admin_password = match admin_response.data["password"].as_str() {
+        Some(pwd) => pwd,
+        None => {
+            return HttpResponse::InternalServerError().json(json!({
+                "status": "error",
+                "message": "Invalid admin data"
+            }));
+        }
+    };
+
+    let is_valid = verify(&req.password, admin_password).unwrap_or(false);
     if !is_valid {
         return HttpResponse::Unauthorized().json(json!({
             "status":"error",
@@ -52,7 +82,7 @@ pub async fn signin_admin(db_pool: web::Data<PgPool>, req: web::Json<LoginUserIn
     }
 
     let jwt_token = env::var("JWT_SECRET").expect("JWT_SECRET must be present");
-    let token = match create_jwt(&existing_admin.id, &jwt_token){
+    let token = match create_jwt(&admin_id, &jwt_token){
         Ok(t) => t,
         Err(_) => {
             return HttpResponse::InternalServerError().json(json!({

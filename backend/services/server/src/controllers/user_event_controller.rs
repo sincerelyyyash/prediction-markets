@@ -1,15 +1,14 @@
 use actix_web::{get, web, HttpResponse, Responder};
-use crate::models::market_model::{EventTable, OutcomeTable, MarketTable};
 use crate::types::event_types::EventSearchQueryRequest;
+use crate::utils::redis_stream::send_request_and_wait;
+use redis_client::{RedisManager, RedisRequest};
 use serde_json::json;
-use sqlx::PgPool;
-use redis_client::RedisManager;
+use uuid::Uuid;
 use log::warn;
 
 #[get("/events")]
-pub async fn get_all_events(db_pool: web::Data<PgPool>) -> impl Responder {
+pub async fn get_all_events() -> impl Responder {
     const CACHE_KEY: &str = "events:all";
-    const CACHE_TTL: i64 = 86400; // 24 hours
 
     if let Some(redis_manager) = RedisManager::global() {
         match redis_manager.get(CACHE_KEY).await {
@@ -26,91 +25,41 @@ pub async fn get_all_events(db_pool: web::Data<PgPool>) -> impl Responder {
             }
         }
     }
-    let events = match sqlx::query_as!(
-        EventTable,
-        r#"
-        SELECT id, slug, title, description, category, status, resolved_at,
-            winning_outcome_id, created_by
-        FROM events
-        ORDER BY id DESC
-        "#
-    )
-    .fetch_all(db_pool.get_ref())
-    .await {
-        Ok(events) => events,
-        Err(_) => {
-            return HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to fetch events"
-            }));
-        }
-    };
 
-    let mut events_with_outcomes = Vec::new();
+    let request_id = Uuid::new_v4().to_string();
+    let read_request = RedisRequest::new(
+        "db_worker",
+        "get_all_events",
+        "Get all events",
+        json!({}),
+    );
 
-    for event in &events {
-        let outcomes = match sqlx::query_as!(
-            OutcomeTable,
-            r#"
-            SELECT id, event_id, name, status
-            FROM outcomes
-            WHERE event_id = $1
-            ORDER BY id ASC
-            "#,
-            event.id
-        )
-        .fetch_all(db_pool.get_ref())
-        .await {
-            Ok(outcomes) => outcomes,
-            Err(_) => {
-                return HttpResponse::InternalServerError().json(json!({
-                    "status": "error",
-                    "message": format!("Failed to fetch outcomes for event {}", event.id)
+    match send_request_and_wait(request_id, read_request, 10).await {
+        Ok(response) => {
+            if response.status_code >= 400 {
+                let status = actix_web::http::StatusCode::from_u16(response.status_code as u16)
+                    .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR);
+                return HttpResponse::build(status).json(json!({
+                    "status": if response.success { "success" } else { "error" },
+                    "message": response.message,
+                    "data": response.data
                 }));
             }
-        };
-
-        events_with_outcomes.push(json!({
-            "id": event.id,
-            "slug": event.slug,
-            "title": event.title,
-            "description": event.description,
-            "category": event.category,
-            "status": event.status,
-            "resolved_at": event.resolved_at,
-            "winning_outcome_id": event.winning_outcome_id,
-            "created_by": event.created_by,
-            "outcomes": outcomes.iter().map(|o| json!({
-                "id": o.id,
-                "event_id": o.event_id,
-                "name": o.name,
-                "status": o.status
-            })).collect::<Vec<_>>()
-        }));
-    }
-
-    let response_data = json!({
-        "status": "success",
-        "message": "Events fetched successfully",
-        "events": events_with_outcomes,
-        "count": events.len()
-    });
-
-    if let Some(redis_manager) = RedisManager::global() {
-        if let Ok(response_json) = serde_json::to_string(&response_data) {
-            if let Err(e) = redis_manager.set_with_ttl(CACHE_KEY, &response_json, CACHE_TTL).await {
-                warn!("Failed to cache events data: {:?}", e);
-            }
+            HttpResponse::Ok().json(response.data)
+        }
+        Err(e) => {
+            HttpResponse::InternalServerError().json(json!({
+                "status": "error",
+                "message": "Failed to fetch events",
+                "error": e
+            }))
         }
     }
-
-    HttpResponse::Ok().json(response_data)
 }
 
 #[get("/events/{event_id}")]
-pub async fn get_event_by_id(db_pool: web::Data<PgPool>, path: web::Path<u64>) -> impl Responder {
-    let event_id = path.into_inner() as i64;
-    const CACHE_TTL: i64 = 86400; // 24 hours
+pub async fn get_event_by_id(path: web::Path<u64>) -> impl Responder {
+    let event_id = path.into_inner();
     let cache_key = format!("event:{}", event_id);
 
     if let Some(redis_manager) = RedisManager::global() {
@@ -128,132 +77,50 @@ pub async fn get_event_by_id(db_pool: web::Data<PgPool>, path: web::Path<u64>) -
             }
         }
     }
-    let event = match sqlx::query_as!(
-        EventTable,
-        r#"
-        SELECT id, slug, title, description, category, status,
-                resolved_at, winning_outcome_id, created_by
-        FROM events
-        WHERE id = $1
-        "#,
-        event_id 
-    )
-    .fetch_optional(db_pool.get_ref())
-    .await {
-        Ok(Some(event)) => event,
-        Ok(None) => {
-            return HttpResponse::NotFound().json(json!({
-                "status": "error",
-                "message": "event not found"
-            }));
-        }
-        Err(_) => {
-            return HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to load event"
-            }));
-        }
-    };
 
-    let outcomes = match sqlx::query_as!(
-        OutcomeTable,
-        r#"
-        SELECT id, event_id, name, status
-        FROM outcomes
-        WHERE event_id = $1
-        ORDER BY id ASC
-        "#,
-        event_id
-    )
-    .fetch_all(db_pool.get_ref())
-    .await {
-        Ok(outcomes) => outcomes,
-        Err(_) => {
-            return HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to load outcomes"
-            }))
-        }
-    };
+    let request_id = Uuid::new_v4().to_string();
+    let read_request = RedisRequest::new(
+        "db_worker",
+        "get_event_by_id",
+        "Get event by ID",
+        json!({
+            "event_id": event_id
+        }),
+    );
 
-    let outcome_ids: Vec<i64> = outcomes.iter().map(|o| o.id).collect();
-
-    let markets = if outcome_ids.is_empty() {
-        Vec::new()
-    } else {
-        match sqlx::query_as!(
-            MarketTable,
-            r#"
-            SELECT id, outcome_id, side
-            FROM markets
-            WHERE outcome_id = ANY($1)
-            ORDER BY outcome_id ASC, side ASC
-            "#,
-            &outcome_ids[..]
-        )
-        .fetch_all(db_pool.get_ref())
-        .await {
-            Ok(markets) => markets,
-            Err(_) => {
-                return HttpResponse::InternalServerError().json(json!({
-                    "status": "error",
-                    "message": "failed to load markets"
+    match send_request_and_wait(request_id, read_request, 10).await {
+        Ok(response) => {
+            if response.status_code >= 400 {
+                if response.status_code == 404 {
+                    return HttpResponse::NotFound().json(json!({
+                        "status": "error",
+                        "message": response.message,
+                        "data": response.data
+                    }));
+                }
+                let status = actix_web::http::StatusCode::from_u16(response.status_code as u16)
+                    .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR);
+                return HttpResponse::build(status).json(json!({
+                    "status": if response.success { "success" } else { "error" },
+                    "message": response.message,
+                    "data": response.data
                 }));
             }
+            HttpResponse::Ok().json(response.data)
         }
-    };
-
-    let response_data = json!({
-        "status": "success",
-        "message": "Event fetched successfully",
-        "event": {
-            "id": event.id,
-            "slug": event.slug,
-            "title": event.title,
-            "description": event.description,
-            "category": event.category,
-            "status": event.status,
-            "resolved_at": event.resolved_at,
-            "winning_outcome_id": event.winning_outcome_id,
-            "created_by": event.created_by
-        },
-        "outcomes": outcomes.iter().map(|o| {
-            let outcome_markets: Vec<_> = markets
-                .iter()
-                .filter(|m| m.outcome_id == o.id)
-                .map(|m| json!({
-                    "id": m.id,
-                    "outcome_id": m.outcome_id,
-                    "side": m.side
-                }))
-                .collect();
-            
-            json!({
-                "id": o.id,
-                "event_id": o.event_id,
-                "name": o.name,
-                "status": o.status,
-                "markets": outcome_markets
-            })
-        }).collect::<Vec<_>>()
-    });
-
-    if let Some(redis_manager) = RedisManager::global() {
-        if let Ok(response_json) = serde_json::to_string(&response_data) {
-            if let Err(e) = redis_manager.set_with_ttl(&cache_key, &response_json, CACHE_TTL).await {
-                warn!("Failed to cache event data: {:?}", e);
-            }
+        Err(e) => {
+            HttpResponse::InternalServerError().json(json!({
+                "status": "error",
+                "message": "Failed to fetch event",
+                "error": e
+            }))
         }
     }
-
-    HttpResponse::Ok().json(response_data)
 }
 
 
 #[get("/events/search")]
-pub async fn search_events(db_pool: web::Data<PgPool>, query: web::Query<EventSearchQueryRequest> ) -> impl Responder {
-    const CACHE_TTL: i64 = 3600; 
-    
+pub async fn search_events(query: web::Query<EventSearchQueryRequest>) -> impl Responder {
     let cache_key = format!(
         "events:search:q:{}:cat:{}:status:{}",
         query.q.as_deref().unwrap_or(""),
@@ -277,120 +144,37 @@ pub async fn search_events(db_pool: web::Data<PgPool>, query: web::Query<EventSe
         }
     }
 
-    let mut query_builder = sqlx::QueryBuilder::new(
-        r#"
-        SELECT id, slug, title, description, category, status, resolved_at,
-            winning_outcome_id, created_by
-        FROM events
-        WHERE 1=1
-        "#
-    );
-
-    if let Some(ref search_term) = query.q {
-        if !search_term.is_empty() {
-            let search_pattern = format!("%{}%", search_term);
-            query_builder.push(" AND (title ILIKE ");
-            query_builder.push_bind(&search_pattern);
-            query_builder.push(" OR description ILIKE ");
-            query_builder.push_bind(&search_pattern);
-            query_builder.push(" OR slug ILIKE ");
-            query_builder.push_bind(&search_pattern);
-            query_builder.push(")");
-        }
-    }
-
-    if let Some(ref category) = query.category {
-        if !category.is_empty() {
-            query_builder.push(" AND category = ");
-            query_builder.push_bind(category);
-        }
-    }
-
-    if let Some(ref status) = query.status {
-        if !status.is_empty() {
-            query_builder.push(" AND status = ");
-            query_builder.push_bind(status);
-        }
-    }
-
-    query_builder.push(" ORDER BY id DESC");
-
-    let events = match query_builder.build_query_as::<EventTable>()
-        .fetch_all(db_pool.get_ref())
-        .await {
-            Ok(events) => events,
-            Err(e) => {
-                warn!("Database query error: {:?}", e);
-                return HttpResponse::InternalServerError().json(json!({
-                    "status": "error",
-                    "message": "Failed to search events"
-                }));
-            }
-        };
-
-    let mut events_with_outcomes = Vec::new();
-
-    for event in &events {
-        let outcomes = match sqlx::query_as!(
-            OutcomeTable,
-            r#"
-            SELECT id, event_id, name, status
-            FROM outcomes
-            WHERE event_id = $1
-            ORDER BY id ASC
-            "#,
-            event.id
-        )
-        .fetch_all(db_pool.get_ref())
-        .await {
-            Ok(outcomes) => outcomes,
-            Err(_) => {
-                return HttpResponse::InternalServerError().json(json!({
-                    "status": "error",
-                    "message": format!("Failed to fetch outcomes for event {}", event.id)
-                }));
-            }
-        };
-
-        events_with_outcomes.push(json!({
-            "id": event.id,
-            "slug": event.slug,
-            "title": event.title,
-            "description": event.description,
-            "category": event.category,
-            "status": event.status,
-            "resolved_at": event.resolved_at,
-            "winning_outcome_id": event.winning_outcome_id,
-            "created_by": event.created_by,
-            "outcomes": outcomes.iter().map(|o| json!({
-                "id": o.id,
-                "event_id": o.event_id,
-                "name": o.name,
-                "status": o.status
-            })).collect::<Vec<_>>()
-        }));
-    }
-
-    let response_data = json!({
-        "status": "success",
-        "message": "Events searched successfully",
-        "events": events_with_outcomes,
-        "count": events.len(),
-        "query": {
+    let request_id = Uuid::new_v4().to_string();
+    let read_request = RedisRequest::new(
+        "db_worker",
+        "search_events",
+        "Search events",
+        json!({
             "q": query.q,
             "category": query.category,
             "status": query.status
-        }
-    });
+        }),
+    );
 
-
-    if let Some(redis_manager) = RedisManager::global() {
-        if let Ok(response_json) = serde_json::to_string(&response_data) {
-            if let Err(e) = redis_manager.set_with_ttl(&cache_key, &response_json, CACHE_TTL).await {
-                warn!("Failed to cache search results: {:?}", e);
+    match send_request_and_wait(request_id, read_request, 10).await {
+        Ok(response) => {
+            if response.status_code >= 400 {
+                let status = actix_web::http::StatusCode::from_u16(response.status_code as u16)
+                    .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR);
+                return HttpResponse::build(status).json(json!({
+                    "status": if response.success { "success" } else { "error" },
+                    "message": response.message,
+                    "data": response.data
+                }));
             }
+            HttpResponse::Ok().json(response.data)
+        }
+        Err(e) => {
+            HttpResponse::InternalServerError().json(json!({
+                "status": "error",
+                "message": "Failed to search events",
+                "error": e
+            }))
         }
     }
-
-    HttpResponse::Ok().json(response_data)
 }

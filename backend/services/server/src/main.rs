@@ -1,17 +1,20 @@
 mod controllers;
 mod types;
 mod utils;
-mod models;
+mod services;
 
 use actix_web::{App, HttpResponse, HttpServer, Responder, web};
-use sqlx::postgres::PgPoolOptions;
 use std::env;
 use dotenvy::dotenv;
 use redis_client::RedisManager;
-use crate::controllers::user_controller::{signup_user, signin_user};
+use crate::controllers::user_controller::{signup_user, signin_user, get_balance, onramp};
 use crate::controllers::admin_auth_controller::{signin_admin};
 use crate::controllers::admin_event_controller::{create_event,resolve_event, update_event, delete_event};
 use crate::controllers::user_event_controller::{get_all_events, get_event_by_id, search_events};
+use crate::controllers::order_controller::{place_order, cancel_order, modify_order, get_open_orders, get_order_status, get_order_history};
+use crate::controllers::position_controller::{get_positions, get_position_by_market, get_portfolio};
+use crate::services::response_consumer::start_response_consumer;
+use crate::services::db_read_response_consumer::start_db_read_response_consumer;
 
 
 async fn health()-> impl Responder {
@@ -24,18 +27,6 @@ async fn run()-> std::io::Result<()> {
 
     dotenv().ok();
 
-    let database_url = env::var("DATABASE_URL")
-    .expect("DATABASE_URL must be set in .env");
-
-    let pool = PgPoolOptions::new()
-    .max_connections(5)
-    .connect(&database_url)
-    .await
-    .expect("Failed to create Postgres pool");
-
-    println!("Connected to Postgres Database");
-
-    // Initialize Redis
     let redis_url = env::var("REDIS_URL")
         .unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
     
@@ -47,11 +38,14 @@ async fn run()-> std::io::Result<()> {
     
     println!("Connected to Redis");
 
+    start_response_consumer().await;
+    start_db_read_response_consumer().await;
 
     HttpServer::new(move|| App::new()
-    .app_data(web::Data::new(pool.clone()))
     .service(signup_user)
     .service(signin_user)
+    .service(get_balance)
+    .service(onramp)
     .service(signin_admin)
     .service(create_event)
     .service(update_event)
@@ -60,6 +54,15 @@ async fn run()-> std::io::Result<()> {
     .service(get_all_events)
     .service(get_event_by_id)
     .service(search_events)
+    .service(place_order)
+    .service(cancel_order)
+    .service(modify_order)
+    .service(get_open_orders)
+    .service(get_order_status)
+    .service(get_order_history)
+    .service(get_positions)
+    .service(get_position_by_market)
+    .service(get_portfolio)
     .route("/health", web::get().to(health)))
     .bind("127.0.0.1:8000")?
     .run()
