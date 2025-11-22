@@ -2,7 +2,6 @@ mod stream_consumer;
 mod handlers;
 mod dead_letter;
 mod read_consumer;
-mod read_handlers;
 mod models;
 
 use std::env;

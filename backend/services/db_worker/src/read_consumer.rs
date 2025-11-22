@@ -5,7 +5,7 @@ use fred::types::XReadResponse;
 use log::{error, info};
 use serde_json::Value;
 use std::collections::HashMap;
-use crate::read_handlers;
+use crate::handlers;
 
 const DB_READ_REQUESTS_STREAM: &str = "db_read_requests";
 
@@ -99,22 +99,52 @@ async fn process_messages(
 
         let result = match action {
             "get_all_events" => {
-                read_handlers::handle_get_all_events(data, pool, request_id.clone()).await
+                handlers::handle_get_all_events(data, pool, request_id.clone()).await
             }
             "get_event_by_id" => {
-                read_handlers::handle_get_event_by_id(data, pool, request_id.clone()).await
+                handlers::handle_get_event_by_id(data, pool, request_id.clone()).await
             }
             "search_events" => {
-                read_handlers::handle_search_events(data, pool, request_id.clone()).await
+                handlers::handle_search_events(data, pool, request_id.clone()).await
             }
             "get_user_by_email" => {
-                read_handlers::handle_get_user_by_email(data, pool, request_id.clone()).await
+                handlers::handle_get_user_by_email(data, pool, request_id.clone()).await
             }
             "get_admin_by_email" => {
-                read_handlers::handle_get_admin_by_email(data, pool, request_id.clone()).await
+                handlers::handle_get_admin_by_email(data, pool, request_id.clone()).await
             }
             "get_outcome_by_id" => {
-                read_handlers::handle_get_outcome_by_id(data, pool, request_id.clone()).await
+                handlers::handle_get_outcome_by_id(data, pool, request_id.clone()).await
+            }
+            "get_trades_by_user" => {
+                handlers::handle_get_trades_by_user(data, pool, request_id.clone()).await
+            }
+            "get_trade_by_id" => {
+                handlers::handle_get_trade_by_id(data, pool, request_id.clone()).await
+            }
+            "get_trades_by_market" => {
+                handlers::handle_get_trades_by_market(data, pool, request_id.clone()).await
+            }
+            "get_order_by_id" => {
+                handlers::handle_get_order_by_id(data, pool, request_id.clone()).await
+            }
+            "get_orders_by_user" => {
+                handlers::handle_get_orders_by_user(data, pool, request_id.clone()).await
+            }
+            "get_orders_by_market" => {
+                handlers::handle_get_orders_by_market(data, pool, request_id.clone()).await
+            }
+            "get_user_by_id" => {
+                handlers::handle_get_user_by_id(data, pool, request_id.clone()).await
+            }
+            "get_all_users" => {
+                handlers::handle_get_all_users(data, pool, request_id.clone()).await
+            }
+            "get_position_by_user_and_market" => {
+                handlers::handle_get_position_by_user_and_market(data, pool, request_id.clone()).await
+            }
+            "get_positions_by_user" => {
+                handlers::handle_get_positions_by_user(data, pool, request_id.clone()).await
             }
             _ => {
                 error!("Unknown read action: {}", action);
@@ -124,7 +154,7 @@ async fn process_messages(
                     format!("Unknown action: {}", action),
                     serde_json::json!(null),
                 );
-                read_handlers::send_read_response(request_id.clone(), error_response).await
+                handlers::send_read_response(request_id.clone(), error_response).await
             }
         };
 

@@ -1,0 +1,37 @@
+pub mod common;
+pub mod event_handlers;
+pub mod user_handlers;
+pub mod admin_handlers;
+pub mod outcome_handlers;
+pub mod trade_handlers;
+pub mod order_handlers;
+pub mod position_handlers;
+
+pub use common::send_read_response;
+pub use event_handlers::{
+    handle_get_all_events,
+    handle_get_event_by_id,
+    handle_search_events,
+};
+pub use user_handlers::{
+    handle_get_user_by_email,
+    handle_get_user_by_id,
+    handle_get_all_users,
+};
+pub use admin_handlers::handle_get_admin_by_email;
+pub use outcome_handlers::handle_get_outcome_by_id;
+pub use trade_handlers::{
+    handle_get_trades_by_user,
+    handle_get_trade_by_id,
+    handle_get_trades_by_market,
+};
+pub use order_handlers::{
+    handle_get_order_by_id,
+    handle_get_orders_by_user,
+    handle_get_orders_by_market,
+};
+pub use position_handlers::{
+    handle_get_position_by_user_and_market,
+    handle_get_positions_by_user,
+};
+
