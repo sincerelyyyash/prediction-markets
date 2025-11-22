@@ -42,3 +42,10 @@ pub struct UpdateEventRequest {
 pub struct DeleteEventRequest {
     pub event_id: u64,
 }
+
+#[derive(Deserialize)]
+pub struct EventSearchQueryRequest {
+    pub q: Option<String>,
+    pub category: Option<String>,
+    pub status: Option<String>,
+}

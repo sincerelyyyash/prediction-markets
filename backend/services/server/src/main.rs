@@ -11,7 +11,7 @@ use redis_client::RedisManager;
 use crate::controllers::user_controller::{signup_user, signin_user};
 use crate::controllers::admin_auth_controller::{signin_admin};
 use crate::controllers::admin_event_controller::{create_event,resolve_event, update_event, delete_event};
-use crate::controllers::user_event_controller::{get_all_events, get_event_by_id};
+use crate::controllers::user_event_controller::{get_all_events, get_event_by_id, search_events};
 
 
 async fn health()-> impl Responder {
@@ -59,6 +59,7 @@ async fn run()-> std::io::Result<()> {
     .service(delete_event)
     .service(get_all_events)
     .service(get_event_by_id)
+    .service(search_events)
     .route("/health", web::get().to(health)))
     .bind("127.0.0.1:8000")?
     .run()
