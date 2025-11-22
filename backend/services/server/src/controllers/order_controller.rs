@@ -245,15 +245,29 @@ pub async fn get_order_status(req: HttpRequest, path: web::Path<u64>) -> impl Re
 
     let request_id = Uuid::new_v4().to_string();
     let redis_request = RedisRequest::new(
-        "engine",
-        "get-order-status",
-        "Get order status",
+        "db_worker",
+        "get_order_by_id",
+        "Get order by ID",
         order_data,
     );
 
     match send_request_and_wait(request_id, redis_request, 10).await {
         Ok(response) => {
             if response.status_code >= 400 {
+                if response.status_code == 404 {
+                    return HttpResponse::NotFound().json(json!({
+                        "status": "error",
+                        "message": response.message,
+                        "data": response.data
+                    }));
+                }
+                if response.status_code == 403 {
+                    return HttpResponse::Forbidden().json(json!({
+                        "status": "error",
+                        "message": response.message,
+                        "data": response.data
+                    }));
+                }
                 let status = actix_web::http::StatusCode::from_u16(response.status_code as u16)
                     .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR);
                 return HttpResponse::build(status).json(json!({
@@ -262,16 +276,12 @@ pub async fn get_order_status(req: HttpRequest, path: web::Path<u64>) -> impl Re
                     "data": response.data
                 }));
             }
-            HttpResponse::Ok().json(json!({
-                "status": "success",
-                "message": response.message,
-                "data": response.data
-            }))
+            HttpResponse::Ok().json(response.data)
         }
         Err(e) => {
             HttpResponse::InternalServerError().json(json!({
                 "status": "error",
-                "message": "Failed to fetch order status",
+                "message": "Failed to fetch order",
                 "error": e
             }))
         }
@@ -291,8 +301,8 @@ pub async fn get_order_history(req: HttpRequest) -> impl Responder {
 
     let request_id = Uuid::new_v4().to_string();
     let redis_request = RedisRequest::new(
-        "engine",
-        "get-order-history",
+        "db_worker",
+        "get_orders_by_user",
         "Get order history",
         order_data,
     );
@@ -308,16 +318,86 @@ pub async fn get_order_history(req: HttpRequest) -> impl Responder {
                     "data": response.data
                 }));
             }
-            HttpResponse::Ok().json(json!({
-                "status": "success",
-                "message": response.message,
-                "data": response.data
-            }))
+            HttpResponse::Ok().json(response.data)
         }
         Err(e) => {
             HttpResponse::InternalServerError().json(json!({
                 "status": "error",
                 "message": "Failed to fetch order history",
+                "error": e
+            }))
+        }
+    }
+}
+
+#[get("/orders/user/{user_id}")]
+pub async fn get_orders_by_user(req: HttpRequest, path: web::Path<u64>) -> impl Responder {
+    let user_id = path.into_inner();
+
+    let request_id = Uuid::new_v4().to_string();
+    let read_request = RedisRequest::new(
+        "db_worker",
+        "get_orders_by_user",
+        "Get orders for user",
+        json!({
+            "user_id": user_id,
+        }),
+    );
+
+    match send_request_and_wait(request_id, read_request, 10).await {
+        Ok(response) => {
+            if response.status_code >= 400 {
+                let status = actix_web::http::StatusCode::from_u16(response.status_code as u16)
+                    .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR);
+                return HttpResponse::build(status).json(json!({
+                    "status": if response.success { "success" } else { "error" },
+                    "message": response.message,
+                    "data": response.data
+                }));
+            }
+            HttpResponse::Ok().json(response.data)
+        }
+        Err(e) => {
+            HttpResponse::InternalServerError().json(json!({
+                "status": "error",
+                "message": "Failed to fetch orders",
+                "error": e
+            }))
+        }
+    }
+}
+
+#[get("/orders/market/{market_id}")]
+pub async fn get_orders_by_market(req: HttpRequest, path: web::Path<u64>) -> impl Responder {
+    let market_id = path.into_inner();
+
+    let request_id = Uuid::new_v4().to_string();
+    let read_request = RedisRequest::new(
+        "db_worker",
+        "get_orders_by_market",
+        "Get orders for market",
+        json!({
+            "market_id": market_id,
+        }),
+    );
+
+    match send_request_and_wait(request_id, read_request, 10).await {
+        Ok(response) => {
+            if response.status_code >= 400 {
+                let status = actix_web::http::StatusCode::from_u16(response.status_code as u16)
+                    .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR);
+                return HttpResponse::build(status).json(json!({
+                    "status": if response.success { "success" } else { "error" },
+                    "message": response.message,
+                    "data": response.data
+                }));
+            }
+            HttpResponse::Ok().json(response.data)
+        }
+        Err(e) => {
+            HttpResponse::InternalServerError().json(json!({
+                "status": "error",
+                "message": "Failed to fetch orders",
                 "error": e
             }))
         }

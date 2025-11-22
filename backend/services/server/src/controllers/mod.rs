@@ -4,3 +4,5 @@ pub mod admin_event_controller;
 pub mod user_event_controller;
 pub mod order_controller;
 pub mod position_controller;
+pub mod trade_controller;
+pub mod user_profile_controller;
