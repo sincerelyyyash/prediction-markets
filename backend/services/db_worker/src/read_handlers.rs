@@ -1,0 +1,628 @@
+use sqlx::{PgPool, Row};
+use serde_json::Value;
+use log::{info, warn};
+use redis_client::{RedisManager, RedisResponse};
+use crate::models::{EventTable, OutcomeTable, MarketTable, UserTable, AdminTable};
+
+const CACHE_TTL_EVENTS: i64 = 86400;
+const CACHE_TTL_SEARCH: i64 = 3600;
+
+pub async fn handle_get_all_events(
+    data: Value,
+    pool: &PgPool,
+    request_id: String,
+) -> Result<(), String> {
+    let events = match sqlx::query!(
+        r#"
+        SELECT id, slug, title, description, category, status, resolved_at,
+            winning_outcome_id, created_by
+        FROM events
+        ORDER BY id DESC
+        "#
+    )
+    .fetch_all(pool)
+    .await {
+        Ok(rows) => rows,
+        Err(e) => {
+            let error_response = RedisResponse::new(
+                500,
+                false,
+                format!("Failed to fetch events: {}", e),
+                serde_json::json!(null),
+            );
+            send_read_response(request_id, error_response).await?;
+            return Err(format!("Failed to fetch events: {}", e));
+        }
+    };
+
+    let mut events_with_outcomes = Vec::new();
+
+    for event in &events {
+        let outcomes = match sqlx::query_as!(
+            OutcomeTable,
+            r#"
+            SELECT id, event_id, name, status
+            FROM outcomes
+            WHERE event_id = $1
+            ORDER BY id ASC
+            "#,
+            event.id
+        )
+        .fetch_all(pool)
+        .await {
+            Ok(outcomes) => outcomes,
+            Err(e) => {
+                let error_response = RedisResponse::new(
+                    500,
+                    false,
+                    format!("Failed to fetch outcomes for event {}: {}", event.id, e),
+                    serde_json::json!(null),
+                );
+                send_read_response(request_id, error_response).await?;
+                return Err(format!("Failed to fetch outcomes: {}", e));
+            }
+        };
+
+        events_with_outcomes.push(serde_json::json!({
+            "id": event.id,
+            "slug": event.slug,
+            "title": event.title,
+            "description": event.description,
+            "category": event.category,
+            "status": event.status,
+            "resolved_at": event.resolved_at,
+            "winning_outcome_id": event.winning_outcome_id,
+            "created_by": event.created_by,
+            "outcomes": outcomes.iter().map(|o| serde_json::json!({
+                "id": o.id,
+                "event_id": o.event_id,
+                "name": &o.name,
+                "status": &o.status
+            })).collect::<Vec<_>>()
+        }));
+    }
+
+    let response_data = serde_json::json!({
+        "status": "success",
+        "message": "Events fetched successfully",
+        "events": events_with_outcomes,
+        "count": events.len()
+    });
+
+    if let Some(redis_manager) = RedisManager::global() {
+        if let Ok(response_json) = serde_json::to_string(&response_data) {
+            if let Err(e) = redis_manager.set_with_ttl("events:all", &response_json, CACHE_TTL_EVENTS).await {
+                warn!("Failed to cache events data: {:?}", e);
+            }
+        }
+    }
+
+    let response = RedisResponse::new(
+        200,
+        true,
+        "Events fetched successfully",
+        response_data,
+    );
+
+    send_read_response(request_id, response).await?;
+    info!("Processed get_all_events request: request_id={}", request_id);
+    Ok(())
+}
+
+pub async fn handle_get_event_by_id(
+    data: Value,
+    pool: &PgPool,
+    request_id: String,
+) -> Result<(), String> {
+    let event_id = data["event_id"].as_u64()
+        .ok_or_else(|| "Invalid event_id".to_string())? as i64;
+
+    let event = match sqlx::query!(
+        r#"
+        SELECT id, slug, title, description, category, status,
+                resolved_at, winning_outcome_id, created_by
+        FROM events
+        WHERE id = $1
+        "#,
+        event_id 
+    )
+    .fetch_optional(pool)
+    .await {
+        Ok(Some(event)) => event,
+        Ok(None) => {
+            let response = RedisResponse::new(
+                404,
+                false,
+                "Event not found",
+                serde_json::json!(null),
+            );
+            send_read_response(request_id, response).await?;
+            return Ok(());
+        }
+        Err(e) => {
+            let error_response = RedisResponse::new(
+                500,
+                false,
+                format!("Failed to load event: {}", e),
+                serde_json::json!(null),
+            );
+            send_read_response(request_id, error_response).await?;
+            return Err(format!("Failed to load event: {}", e));
+        }
+    };
+
+    let outcomes = match sqlx::query!(
+        r#"
+        SELECT id, event_id, name, status
+        FROM outcomes
+        WHERE event_id = $1
+        ORDER BY id ASC
+        "#,
+        event_id
+    )
+    .fetch_all(pool)
+    .await {
+        Ok(outcomes) => outcomes,
+        Err(e) => {
+            let error_response = RedisResponse::new(
+                500,
+                false,
+                format!("Failed to load outcomes: {}", e),
+                serde_json::json!(null),
+            );
+            send_read_response(request_id, error_response).await?;
+            return Err(format!("Failed to load outcomes: {}", e));
+        }
+    };
+
+    let outcome_ids: Vec<i64> = outcomes.iter().map(|o| o.id).collect();
+
+    let markets = if outcome_ids.is_empty() {
+        Vec::new()
+    } else {
+        match sqlx::query!(
+            r#"
+            SELECT id, outcome_id, side
+            FROM markets
+            WHERE outcome_id = ANY($1)
+            ORDER BY outcome_id ASC, side ASC
+            "#,
+            &outcome_ids[..]
+        )
+        .fetch_all(pool)
+        .await {
+            Ok(markets) => markets,
+            Err(e) => {
+                let error_response = RedisResponse::new(
+                    500,
+                    false,
+                    format!("Failed to load markets: {}", e),
+                    serde_json::json!(null),
+                );
+                send_read_response(request_id, error_response).await?;
+                return Err(format!("Failed to load markets: {}", e));
+            }
+        }
+    };
+
+    let response_data = serde_json::json!({
+        "status": "success",
+        "message": "Event fetched successfully",
+        "event": {
+            "id": event.id,
+            "slug": event.slug,
+            "title": event.title,
+            "description": event.description,
+            "category": event.category,
+            "status": event.status,
+            "resolved_at": event.resolved_at,
+            "winning_outcome_id": event.winning_outcome_id,
+            "created_by": event.created_by
+        },
+        "outcomes": outcomes.iter().map(|o| {
+            let outcome_markets: Vec<_> = markets
+                .iter()
+                .filter(|m| m.outcome_id == o.id)
+                .map(|m| serde_json::json!({
+                    "id": m.id,
+                    "outcome_id": m.outcome_id,
+                    "side": m.side.as_str()
+                }))
+                .collect();
+            
+            serde_json::json!({
+                "id": o.id,
+                "event_id": o.event_id,
+                "name": o.name.as_str(),
+                "status": o.status.as_str(),
+                "markets": outcome_markets
+            })
+        }).collect::<Vec<_>>()
+    });
+
+    if let Some(redis_manager) = RedisManager::global() {
+        let cache_key = format!("event:{}", event_id);
+        if let Ok(response_json) = serde_json::to_string(&response_data) {
+            if let Err(e) = redis_manager.set_with_ttl(&cache_key, &response_json, CACHE_TTL_EVENTS).await {
+                warn!("Failed to cache event data: {:?}", e);
+            }
+        }
+    }
+
+    let response = RedisResponse::new(
+        200,
+        true,
+        "Event fetched successfully",
+        response_data,
+    );
+
+    send_read_response(request_id, response).await?;
+    info!("Processed get_event_by_id request: request_id={}, event_id={}", request_id, event_id);
+    Ok(())
+}
+
+pub async fn handle_search_events(
+    data: Value,
+    pool: &PgPool,
+    request_id: String,
+) -> Result<(), String> {
+    let q = data["q"].as_str();
+    let category = data["category"].as_str();
+    let status = data["status"].as_str();
+
+    let cache_key = format!(
+        "events:search:q:{}:cat:{}:status:{}",
+        q.unwrap_or(""),
+        category.unwrap_or(""),
+        status.unwrap_or("")
+    );
+
+    let mut query_builder = sqlx::QueryBuilder::new(
+        r#"
+        SELECT id, slug, title, description, category, status, resolved_at,
+            winning_outcome_id, created_by
+        FROM events
+        WHERE 1=1
+        "#
+    );
+
+    if let Some(search_term) = q {
+        if !search_term.is_empty() {
+            let search_pattern = format!("%{}%", search_term);
+            query_builder.push(" AND (title ILIKE ");
+            query_builder.push_bind(&search_pattern);
+            query_builder.push(" OR description ILIKE ");
+            query_builder.push_bind(&search_pattern);
+            query_builder.push(" OR slug ILIKE ");
+            query_builder.push_bind(&search_pattern);
+            query_builder.push(")");
+        }
+    }
+
+    if let Some(cat) = category {
+        if !cat.is_empty() {
+            query_builder.push(" AND category = ");
+            query_builder.push_bind(cat);
+        }
+    }
+
+    if let Some(stat) = status {
+        if !stat.is_empty() {
+            query_builder.push(" AND status = ");
+            query_builder.push_bind(stat);
+        }
+    }
+
+    query_builder.push(" ORDER BY id DESC");
+
+    let query = query_builder.build();
+    let events_result: Result<Vec<sqlx::postgres::PgRow>, sqlx::Error> = query.fetch_all(pool).await;
+
+    let events = match events_result {
+        Ok(rows) => {
+            rows.iter().map(|row| serde_json::json!({
+                "id": row.get::<i64, _>("id"),
+                "slug": row.get::<String, _>("slug"),
+                "title": row.get::<String, _>("title"),
+                "description": row.get::<String, _>("description"),
+                "category": row.get::<String, _>("category"),
+                "status": row.get::<String, _>("status"),
+                "resolved_at": row.get::<Option<String>, _>("resolved_at"),
+                "winning_outcome_id": row.get::<Option<i64>, _>("winning_outcome_id"),
+                "created_by": row.get::<i64, _>("created_by"),
+            })).collect::<Vec<_>>()
+        },
+        Err(e) => {
+            let error_response = RedisResponse::new(
+                500,
+                false,
+                format!("Failed to search events: {}", e),
+                serde_json::json!(null),
+            );
+            send_read_response(request_id, error_response).await?;
+            return Err(format!("Failed to search events: {}", e));
+        }
+    };
+
+    let mut events_with_outcomes = Vec::new();
+
+    for event_json in &events {
+        let event_id = event_json["id"].as_i64().unwrap();
+        let outcomes = match sqlx::query!(
+            r#"
+            SELECT id, event_id, name, status
+            FROM outcomes
+            WHERE event_id = $1
+            ORDER BY id ASC
+            "#,
+            event_id
+        )
+        .fetch_all(pool)
+        .await {
+            Ok(outcomes) => outcomes,
+            Err(e) => {
+                let error_response = RedisResponse::new(
+                    500,
+                    false,
+                    format!("Failed to fetch outcomes for event {}: {}", event_id, e),
+                    serde_json::json!(null),
+                );
+                send_read_response(request_id, error_response).await?;
+                return Err(format!("Failed to fetch outcomes: {}", e));
+            }
+        };
+
+        let mut event_with_outcomes = event_json.clone();
+        event_with_outcomes["outcomes"] = serde_json::json!(outcomes.iter().map(|o| serde_json::json!({
+            "id": o.id,
+            "event_id": o.event_id,
+            "name": o.name.as_str(),
+            "status": o.status.as_str()
+        })).collect::<Vec<_>>());
+        events_with_outcomes.push(event_with_outcomes);
+    }
+
+    let response_data = serde_json::json!({
+        "status": "success",
+        "message": "Events searched successfully",
+        "events": events_with_outcomes,
+        "count": events.len(),
+        "query": {
+            "q": q,
+            "category": category,
+            "status": status
+        }
+    });
+
+    if let Some(redis_manager) = RedisManager::global() {
+        if let Ok(response_json) = serde_json::to_string(&response_data) {
+            if let Err(e) = redis_manager.set_with_ttl(&cache_key, &response_json, CACHE_TTL_SEARCH).await {
+                warn!("Failed to cache search results: {:?}", e);
+            }
+        }
+    }
+
+    let response = RedisResponse::new(
+        200,
+        true,
+        "Events searched successfully",
+        response_data,
+    );
+
+    send_read_response(request_id, response).await?;
+    info!("Processed search_events request: request_id={}", request_id);
+    Ok(())
+}
+
+pub async fn handle_get_user_by_email(
+    data: Value,
+    pool: &PgPool,
+    request_id: String,
+) -> Result<(), String> {
+    let email = data["email"].as_str()
+        .ok_or_else(|| "Invalid email".to_string())?;
+
+    let user = match sqlx::query_as!(
+        UserTable,
+        r#"
+        SELECT id, email, name, password, balance
+        FROM users
+        WHERE email = $1
+        "#,
+        email
+    )
+    .fetch_optional(pool)
+    .await {
+        Ok(Some(user)) => user,
+        Ok(None) => {
+            let response = RedisResponse::new(
+                404,
+                false,
+                "User not found",
+                serde_json::json!(null),
+            );
+            send_read_response(request_id, response).await?;
+            return Ok(());
+        }
+        Err(e) => {
+            let error_response = RedisResponse::new(
+                500,
+                false,
+                format!("Failed to fetch user: {}", e),
+                serde_json::json!(null),
+            );
+            send_read_response(request_id, error_response).await?;
+            return Err(format!("Failed to fetch user: {}", e));
+        }
+    };
+
+    let response_data = serde_json::json!({
+        "id": user.id,
+        "email": user.email,
+        "name": user.name,
+        "password": user.password,
+        "balance": user.balance,
+    });
+
+    let response = RedisResponse::new(
+        200,
+        true,
+        "User fetched successfully",
+        response_data,
+    );
+
+    send_read_response(request_id, response).await?;
+    info!("Processed get_user_by_email request: request_id={}", request_id);
+    Ok(())
+}
+
+pub async fn handle_get_admin_by_email(
+    data: Value,
+    pool: &PgPool,
+    request_id: String,
+) -> Result<(), String> {
+    let email = data["email"].as_str()
+        .ok_or_else(|| "Invalid email".to_string())?;
+
+    let admin = match sqlx::query_as!(
+        AdminTable,
+        r#"
+        SELECT id, email, name, password
+        FROM admins
+        WHERE email = $1
+        "#,
+        email
+    )
+    .fetch_optional(pool)
+    .await {
+        Ok(Some(admin)) => admin,
+        Ok(None) => {
+            let response = RedisResponse::new(
+                404,
+                false,
+                "Admin not found",
+                serde_json::json!(null),
+            );
+            send_read_response(request_id, response).await?;
+            return Ok(());
+        }
+        Err(e) => {
+            let error_response = RedisResponse::new(
+                500,
+                false,
+                format!("Failed to fetch admin: {}", e),
+                serde_json::json!(null),
+            );
+            send_read_response(request_id, error_response).await?;
+            return Err(format!("Failed to fetch admin: {}", e));
+        }
+    };
+
+    let response_data = serde_json::json!({
+        "id": admin.id,
+        "email": admin.email,
+        "name": admin.name,
+        "password": admin.password,
+    });
+
+    let response = RedisResponse::new(
+        200,
+        true,
+        "Admin fetched successfully",
+        response_data,
+    );
+
+    send_read_response(request_id, response).await?;
+    info!("Processed get_admin_by_email request: request_id={}", request_id);
+    Ok(())
+}
+
+pub async fn handle_get_outcome_by_id(
+    data: Value,
+    pool: &PgPool,
+    request_id: String,
+) -> Result<(), String> {
+    let outcome_id = data["outcome_id"].as_u64()
+        .ok_or_else(|| "Invalid outcome_id".to_string())? as i64;
+
+    let outcome = match sqlx::query_as!(
+        OutcomeTable,
+        r#"
+        SELECT id, event_id, name, status
+        FROM outcomes
+        WHERE id = $1
+        "#,
+        outcome_id
+    )
+    .fetch_optional(pool)
+    .await {
+        Ok(Some(outcome)) => outcome,
+        Ok(None) => {
+            let response = RedisResponse::new(
+                404,
+                false,
+                "Outcome not found",
+                serde_json::json!(null),
+            );
+            send_read_response(request_id, response).await?;
+            return Ok(());
+        }
+        Err(e) => {
+            let error_response = RedisResponse::new(
+                500,
+                false,
+                format!("Failed to fetch outcome: {}", e),
+                serde_json::json!(null),
+            );
+            send_read_response(request_id, error_response).await?;
+            return Err(format!("Failed to fetch outcome: {}", e));
+        }
+    };
+
+    let response_data = serde_json::json!({
+        "id": outcome.id,
+        "event_id": outcome.event_id,
+        "name": outcome.name,
+        "status": outcome.status,
+    });
+
+    let response = RedisResponse::new(
+        200,
+        true,
+        "Outcome fetched successfully",
+        response_data,
+    );
+
+    send_read_response(request_id, response).await?;
+    info!("Processed get_outcome_by_id request: request_id={}", request_id);
+    Ok(())
+}
+
+pub async fn send_read_response(
+    request_id: String,
+    response: RedisResponse<serde_json::Value>,
+) -> Result<(), String> {
+    let redis_manager = match RedisManager::global() {
+        Some(rm) => rm,
+        None => {
+            return Err("Redis manager not initialized".into());
+        }
+    };
+
+    let response_json = serde_json::to_string(&response)
+        .map_err(|e| format!("Failed to serialize response: {}", e))?;
+
+    redis_manager
+        .stream_add(
+            "db_read_responses",
+            &[
+                ("request_id", &request_id),
+                ("data", &response_json),
+            ],
+        )
+        .await
+        .map_err(|e| format!("Failed to send response: {}", e))?;
+
+    Ok(())
+}
+
