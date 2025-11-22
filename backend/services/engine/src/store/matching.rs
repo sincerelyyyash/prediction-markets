@@ -59,6 +59,9 @@ async fn match_bid_against_asks(
             let fill_qty = order.remaining_qty.min(maker_order.remaining_qty);
             let fill_price = ask_price;
 
+            // Update last_price in orderbook
+            book.last_price = Some(fill_price);
+
             order.remaining_qty -= fill_qty;
             maker_order.remaining_qty -= fill_qty;
 
@@ -205,6 +208,8 @@ async fn match_ask_against_bids(
 
             let fill_qty = order.remaining_qty.min(maker_order.remaining_qty);
             let fill_price = bid_price;
+
+            book.last_price = Some(fill_price);
 
             order.remaining_qty -= fill_qty;
             maker_order.remaining_qty -= fill_qty;

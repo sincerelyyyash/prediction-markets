@@ -225,7 +225,21 @@ async fn handle_trade_executed(event: Value, pool: &PgPool) -> Result<(), String
     .await
     .map_err(|e| format!("Failed to insert trade: {}", e))?;
 
-    info!("Trade executed: trade_id={}, market_id={}", trade_id, market_id);
+
+    sqlx::query!(
+        r#"
+        UPDATE markets
+        SET last_price = $1
+        WHERE id = $2
+        "#,
+        price as i64,
+        market_id as i64,
+    )
+    .execute(pool)
+    .await
+    .map_err(|e| format!("Failed to update market last_price: {}", e))?;
+
+    info!("Trade executed: trade_id={}, market_id={}, price={}", trade_id, market_id, price);
     Ok(())
 }
 

@@ -244,6 +244,7 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                             ask_queue: HashMap::new(),
                             bid_queue: HashMap::new(),
                             orders: HashMap::new(),
+                            last_price: None,
                         });
 
                     let id = Uuid::new_v4().as_u128() as u64;
@@ -414,6 +415,7 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                         market_id,
                         bids,
                         asks,
+                        last_price: book.last_price,
                     };
 
                     let _ = reply.send(Ok(snapshot));

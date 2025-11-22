@@ -27,6 +27,7 @@ pub struct MarketTable {
     pub id: i64,
     pub outcome_id: i64,
     pub side: String,
+    pub last_price: Option<i64>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, FromRow)]
