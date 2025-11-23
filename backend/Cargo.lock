@@ -2093,6 +2093,7 @@ dependencies = [
  "engine",
  "env_logger",
  "fred",
+ "futures-util",
  "jsonwebtoken",
  "log",
  "once_cell",
