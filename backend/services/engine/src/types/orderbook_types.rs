@@ -14,6 +14,12 @@ pub struct OrderbookData {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum OrderType {
+    Market,
+    Limit,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Order {
     pub order_id: Option<u64>,
     pub market_id: u64,
@@ -22,6 +28,7 @@ pub struct Order {
     pub original_qty: u64,
     pub remaining_qty: u64,
     pub side: OrderSide,
+    pub order_type: OrderType,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

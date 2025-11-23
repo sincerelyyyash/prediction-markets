@@ -151,6 +151,8 @@ async fn process_message(
                 "get-positions" => handle_get_positions(request.data, orderbook).await,
                 "get-position" => handle_get_position(request.data, orderbook).await,
                 "get-portfolio" => handle_get_portfolio(request.data, orderbook).await,
+                "split-order" => handle_split_order(request.data, orderbook).await,
+                "merge-order" => handle_merge_order(request.data, orderbook).await,
                 _ => {
                     warn!("Unknown action: {}", request.action);
                     Ok(RedisResponse::new(
@@ -187,14 +189,51 @@ async fn handle_place_order(data: Value, orderbook: &Orderbook) -> Result<RedisR
     let req: PlaceOrderRequest = serde_json::from_value(data)
         .map_err(|e| format!("Invalid request data: {}", e))?;
 
+    let price = match req.order_type {
+        crate::types::orderbook_types::OrderType::Market => {
+            match req.side {
+                crate::types::orderbook_types::OrderSide::Bid => {
+                    match orderbook.best_ask(req.market_id).await {
+                        Ok(p) if p > 0 => p,
+                        _ => {
+                            return Ok(RedisResponse::new(
+                                400,
+                                false,
+                                "No available ask price for market order".to_string(),
+                                serde_json::json!(null),
+                            ));
+                        }
+                    }
+                }
+                crate::types::orderbook_types::OrderSide::Ask => {
+                    match orderbook.best_bid(req.market_id).await {
+                        Ok(p) if p > 0 => p,
+                        _ => {
+                            return Ok(RedisResponse::new(
+                                400,
+                                false,
+                                "No available bid price for market order".to_string(),
+                                serde_json::json!(null),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        crate::types::orderbook_types::OrderType::Limit => {
+            req.price.ok_or_else(|| "Price required for limit orders".to_string())?
+        }
+    };
+
     let order = Order {
         order_id: None,
         market_id: req.market_id,
         user_id: req.user_id,
-        price: req.price,
+        price,
         original_qty: req.original_qty,
         remaining_qty: req.remaining_qty,
         side: req.side,
+        order_type: req.order_type,
     };
 
     match orderbook.place_order(order).await {
@@ -585,6 +624,54 @@ async fn handle_get_portfolio(data: Value, orderbook: &Orderbook) -> Result<Redi
             "pnl": total_value as i64 - balance
         }),
     ))
+}
+
+async fn handle_split_order(data: Value, orderbook: &Orderbook) -> Result<RedisResponse<Value>, String> {
+    let req: SplitOrderRequest = serde_json::from_value(data)
+        .map_err(|e| format!("Invalid request data: {}", e))?;
+
+    match orderbook.create_split_postion(req.user_id, req.market1_id, req.market2_id, req.amount).await {
+        Ok(_) => {
+            Ok(RedisResponse::new(
+                200,
+                true,
+                "Split order executed successfully",
+                serde_json::json!({ "market1_id": req.market1_id, "market2_id": req.market2_id, "amount": req.amount }),
+            ))
+        }
+        Err(e) => {
+            Ok(RedisResponse::new(
+                400,
+                false,
+                format!("Failed to execute split order: {}", e),
+                serde_json::json!(null),
+            ))
+        }
+    }
+}
+
+async fn handle_merge_order(data: Value, orderbook: &Orderbook) -> Result<RedisResponse<Value>, String> {
+    let req: MergeOrderRequest = serde_json::from_value(data)
+        .map_err(|e| format!("Invalid request data: {}", e))?;
+
+    match orderbook.merge_position(req.user_id, req.market1_id, req.market2_id).await {
+        Ok(_) => {
+            Ok(RedisResponse::new(
+                200,
+                true,
+                "Merge order executed successfully",
+                serde_json::json!({ "market1_id": req.market1_id, "market2_id": req.market2_id }),
+            ))
+        }
+        Err(e) => {
+            Ok(RedisResponse::new(
+                400,
+                false,
+                format!("Failed to execute merge order: {}", e),
+                serde_json::json!(null),
+            ))
+        }
+    }
 }
 
 async fn send_response(request_id: String, response: RedisResponse<Value>) -> Result<(), String> {

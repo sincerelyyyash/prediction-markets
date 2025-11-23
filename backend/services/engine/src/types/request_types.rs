@@ -1,17 +1,40 @@
 use serde::Deserialize;
-use crate::types::orderbook_types::OrderSide;
+use crate::types::orderbook_types::{OrderSide, OrderType};
 
 #[derive(Debug, Deserialize)]
 pub struct PlaceOrderRequest {
     pub market_id: u64,
     pub user_id: u64,
-    pub price: u64,
+    pub price: Option<u64>,
     #[serde(rename = "original_qty")]
     pub original_qty: u64,
     #[serde(rename = "remaining_qty")]
     pub remaining_qty: u64,
     #[serde(with = "order_side_string")]
     pub side: OrderSide,
+    #[serde(with = "order_type_string", default = "default_order_type")]
+    pub order_type: OrderType,
+}
+
+fn default_order_type() -> OrderType {
+    OrderType::Limit
+}
+
+mod order_type_string {
+    use serde::{Deserialize, Deserializer};
+    use crate::types::orderbook_types::OrderType;
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<OrderType, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.as_str() {
+            "Market" => Ok(OrderType::Market),
+            "Limit" => Ok(OrderType::Limit),
+            _ => Err(serde::de::Error::custom("Invalid order type, must be Market or Limit")),
+        }
+    }
 }
 
 mod order_side_string {
@@ -80,5 +103,20 @@ pub struct GetBalanceRequest {
 pub struct OnrampRequest {
     pub user_id: u64,
     pub amount: i64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SplitOrderRequest {
+    pub user_id: u64,
+    pub market1_id: u64,
+    pub market2_id: u64,
+    pub amount: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MergeOrderRequest {
+    pub user_id: u64,
+    pub market1_id: u64,
+    pub market2_id: u64,
 }
 

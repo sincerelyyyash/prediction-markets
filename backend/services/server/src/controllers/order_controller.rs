@@ -1,5 +1,5 @@
 use actix_web::{get, post, put, web, HttpRequest, HttpResponse, Responder};
-use crate::types::order_types::{PlaceOrderInput, ModifyOrderInput, OrderSideInput};
+use crate::types::order_types::{PlaceOrderInput, ModifyOrderInput, OrderSideInput, OrderTypeInput, SplitOrderInput, MergeOrderInput};
 use crate::utils::jwt::extract_user_id;
 use crate::utils::redis_stream::send_request_and_wait;
 use redis_client::RedisRequest;
@@ -26,6 +26,18 @@ pub async fn place_order(req: HttpRequest, body: web::Json<PlaceOrderInput>) -> 
         OrderSideInput::Bid => "Bid",
     };
 
+    let order_type_str = match body.order_type {
+        OrderTypeInput::Market => "Market",
+        OrderTypeInput::Limit => "Limit",
+    };
+
+    if body.order_type == OrderTypeInput::Limit && body.price.is_none() {
+        return HttpResponse::BadRequest().json(json!({
+            "status": "error",
+            "message": "Price is required for limit orders"
+        }));
+    }
+
     let order_data = json!({
         "market_id": body.market_id,
         "user_id": user_id as u64,
@@ -33,6 +45,7 @@ pub async fn place_order(req: HttpRequest, body: web::Json<PlaceOrderInput>) -> 
         "original_qty": body.quantity,
         "remaining_qty": body.quantity,
         "side": order_side,
+        "order_type": order_type_str,
     });
 
     let request_id = Uuid::new_v4().to_string();
@@ -177,6 +190,117 @@ pub async fn modify_order(req: HttpRequest, path: web::Path<u64>, body: web::Jso
             HttpResponse::InternalServerError().json(json!({
                 "status": "error",
                 "message": "Failed to modify order",
+                "error": e
+            }))
+        }
+    }
+}
+
+#[post("/orders/split")]
+pub async fn split_order(req: HttpRequest, body: web::Json<SplitOrderInput>) -> impl Responder {
+    if let Err(e) = body.validate() {
+        return HttpResponse::BadRequest().json(json!({
+            "status": "error",
+            "message": e.to_string()
+        }));
+    }
+
+    let user_id = match extract_user_id(&req) {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+
+    let order_data = json!({
+        "user_id": user_id as u64,
+        "market1_id": body.market1_id,
+        "market2_id": body.market2_id,
+        "amount": body.amount,
+    });
+
+    let request_id = Uuid::new_v4().to_string();
+    let redis_request = RedisRequest::new(
+        "engine",
+        "split-order",
+        "Split order request",
+        order_data,
+    );
+
+    match send_request_and_wait(request_id, redis_request, 10).await {
+        Ok(response) => {
+            if response.status_code >= 400 {
+                let status = actix_web::http::StatusCode::from_u16(response.status_code as u16)
+                    .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR);
+                return HttpResponse::build(status).json(json!({
+                    "status": if response.success { "success" } else { "error" },
+                    "message": response.message,
+                    "data": response.data
+                }));
+            }
+            HttpResponse::Ok().json(json!({
+                "status": "success",
+                "message": response.message,
+                "data": response.data
+            }))
+        }
+        Err(e) => {
+            HttpResponse::InternalServerError().json(json!({
+                "status": "error",
+                "message": "Failed to process split order",
+                "error": e
+            }))
+        }
+    }
+}
+
+#[post("/orders/merge")]
+pub async fn merge_order(req: HttpRequest, body: web::Json<MergeOrderInput>) -> impl Responder {
+    if let Err(e) = body.validate() {
+        return HttpResponse::BadRequest().json(json!({
+            "status": "error",
+            "message": e.to_string()
+        }));
+    }
+
+    let user_id = match extract_user_id(&req) {
+        Ok(id) => id,
+        Err(resp) => return resp,
+    };
+
+    let order_data = json!({
+        "user_id": user_id as u64,
+        "market1_id": body.market1_id,
+        "market2_id": body.market2_id,
+    });
+
+    let request_id = Uuid::new_v4().to_string();
+    let redis_request = RedisRequest::new(
+        "engine",
+        "merge-order",
+        "Merge order request",
+        order_data,
+    );
+
+    match send_request_and_wait(request_id, redis_request, 10).await {
+        Ok(response) => {
+            if response.status_code >= 400 {
+                let status = actix_web::http::StatusCode::from_u16(response.status_code as u16)
+                    .unwrap_or(actix_web::http::StatusCode::INTERNAL_SERVER_ERROR);
+                return HttpResponse::build(status).json(json!({
+                    "status": if response.success { "success" } else { "error" },
+                    "message": response.message,
+                    "data": response.data
+                }));
+            }
+            HttpResponse::Ok().json(json!({
+                "status": "success",
+                "message": response.message,
+                "data": response.data
+            }))
+        }
+        Err(e) => {
+            HttpResponse::InternalServerError().json(json!({
+                "status": "error",
+                "message": "Failed to process merge order",
                 "error": e
             }))
         }
@@ -403,4 +527,3 @@ pub async fn get_orders_by_market(req: HttpRequest, path: web::Path<u64>) -> imp
         }
     }
 }
-

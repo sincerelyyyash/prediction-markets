@@ -41,7 +41,7 @@ async fn match_bid_against_asks(
             break;
         };
 
-        if order.price < ask_price {
+        if matches!(order.order_type, crate::types::orderbook_types::OrderType::Limit) && order.price < ask_price {
             break;
         }
 
@@ -59,7 +59,6 @@ async fn match_bid_against_asks(
             let fill_qty = order.remaining_qty.min(maker_order.remaining_qty);
             let fill_price = ask_price;
 
-            // Update last_price in orderbook
             book.last_price = Some(fill_price);
 
             order.remaining_qty -= fill_qty;
@@ -67,7 +66,12 @@ async fn match_bid_against_asks(
 
             *book.asks.get_mut(&ask_price).unwrap() -= fill_qty;
 
-            let price_diff = (order.price as i64) - (fill_price as i64);
+            let price_diff = match order.order_type {
+                crate::types::orderbook_types::OrderType::Market => 0,
+                crate::types::orderbook_types::OrderType::Limit => {
+                    (order.price as i64) - (fill_price as i64)
+                }
+            };
             let refund = price_diff * (fill_qty as i64);
             update_balance(users, order.user_id, refund)?;
 
@@ -191,7 +195,7 @@ async fn match_ask_against_bids(
             break;
         };
 
-        if order.price > bid_price {
+        if matches!(order.order_type, crate::types::orderbook_types::OrderType::Limit) && order.price > bid_price {
             break;
         }
 
@@ -216,7 +220,10 @@ async fn match_ask_against_bids(
 
             *book.bids.get_mut(&bid_price).unwrap() -= fill_qty;
 
-            let payment = (fill_price as i64) * (fill_qty as i64);
+            let payment = match order.order_type {
+                crate::types::orderbook_types::OrderType::Market => (fill_price as i64) * (fill_qty as i64),
+                crate::types::orderbook_types::OrderType::Limit => 0,
+            };
             update_balance(users, order.user_id, payment)?;
 
             update_position(users, order.user_id, order.market_id, -(fill_qty as i64))?;

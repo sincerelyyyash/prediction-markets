@@ -12,7 +12,7 @@ use crate::controllers::user_controller::{signup_user, signin_user, get_balance,
 use crate::controllers::admin_auth_controller::{signin_admin};
 use crate::controllers::admin_event_controller::{create_event,resolve_event, update_event, delete_event};
 use crate::controllers::user_event_controller::{get_all_events, get_event_by_id, search_events};
-use crate::controllers::order_controller::{place_order, cancel_order, modify_order, get_open_orders, get_order_status, get_order_history, get_orders_by_user, get_orders_by_market};
+use crate::controllers::order_controller::{place_order, cancel_order, modify_order, split_order, merge_order, get_open_orders, get_order_status, get_order_history, get_orders_by_user, get_orders_by_market};
 use crate::controllers::position_controller::{get_positions, get_position_by_market, get_portfolio, get_positions_history};
 use crate::controllers::trade_controller::{get_trades, get_trade_by_id, get_trades_by_market, get_trades_by_user_id};
 use crate::controllers::user_profile_controller::{get_user_by_id, get_all_users};
@@ -63,6 +63,8 @@ async fn run()-> std::io::Result<()> {
                     .service(place_order)
                     .service(cancel_order)
                     .service(modify_order)
+                    .service(split_order)
+                    .service(merge_order)
                     .service(get_open_orders)
                     .service(get_order_status)
                     .service(get_order_history)
