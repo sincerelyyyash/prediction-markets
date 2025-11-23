@@ -50,9 +50,21 @@ async fn read_stream_messages(
     let streams = vec![stream];
     let ids = vec![last_id.as_str()];
     
-    let xread_result: XReadResponse<String, String, String, RedisValue> = client
+    let xread_result: XReadResponse<String, String, String, RedisValue> = match client
         .xread(Some(10), None, streams, ids)
-        .await?;
+        .await
+    {
+        Ok(result) => result,
+        Err(e) => {
+            let error_msg = e.to_string();
+            if error_msg.contains("Cannot convert to map") || error_msg.contains("Parse Error") {
+
+                return Ok(Vec::new());
+            }
+
+            return Err(e);
+        }
+    };
     
     // Convert XReadResponse to our format
     let mut result: Vec<(String, Vec<(String, HashMap<String, String>)>)> = Vec::new();

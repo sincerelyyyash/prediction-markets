@@ -1,7 +1,6 @@
 use redis_client::RedisManager;
 use sqlx::PgPool;
 use fred::prelude::*;
-use fred::types::XReadResponse;
 use log::{error, info};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -22,13 +21,18 @@ pub async fn start_read_request_consumer(pool: PgPool) {
     info!("Starting read request consumer for stream: {}", DB_READ_REQUESTS_STREAM);
     let mut last_id = "0".to_string();
 
+    let mut iteration = 0;
     loop {
+        iteration += 1;
         match read_stream_messages(&client, DB_READ_REQUESTS_STREAM, &mut last_id).await {
             Ok(messages) => {
                 if !messages.is_empty() {
+                    info!("Read {} messages from stream (iteration {})", messages.len(), iteration);
                     if let Err(e) = process_messages(messages, &pool).await {
                         error!("Error processing read request messages: {}", e);
                     }
+                } else if iteration % 100 == 0 {
+                    info!("No messages in stream (iteration {}, last_id: {})", iteration, last_id);
                 }
             }
             Err(e) => {
@@ -45,32 +49,63 @@ async fn read_stream_messages(
     stream: &str,
     last_id: &mut String,
 ) -> Result<Vec<(String, HashMap<String, String>)>, RedisError> {
+    use fred::types::RedisValue;
+    
     let streams = vec![stream];
     let ids = vec![last_id.as_str()];
     
-    let xread_result: XReadResponse<String, String, String, RedisValue> = client
-        .xread(Some(10), None, streams, ids)
-        .await?;
+    let raw_result: RedisValue = match client
+        .xread::<RedisValue, _, _>(Some(10), None, streams, ids)
+        .await
+    {
+        Ok(result) => result,
+        Err(e) => {
+            let error_msg = e.to_string();
+            error!("XREAD error: {}", error_msg);
+            return Err(e);
+        }
+    };
+    
+    info!("XREAD raw result: {:?}", raw_result);
     
     let mut result: Vec<(String, HashMap<String, String>)> = Vec::new();
-    for (_stream_name, stream_entries) in xread_result.into_iter() {
-        for (msg_id, fields) in stream_entries {
-            let mut fields_map: HashMap<String, String> = HashMap::new();
-            
-            for (key, value) in fields {
-                let key_str = key.to_string();
-                let value_str = value.as_str().map(|s| s.to_string()).unwrap_or_else(|| "".to_string());
-                fields_map.insert(key_str, value_str);
+    
+    if let RedisValue::Array(streams_array) = raw_result {
+        for stream_entry in streams_array {
+            if let RedisValue::Array(stream_data) = stream_entry {
+                if stream_data.len() >= 2 {
+                    if let RedisValue::Array(messages) = &stream_data[1] {
+                        for message in messages {
+                            if let RedisValue::Array(msg_data) = message {
+                                if msg_data.len() >= 2 {
+                                    let msg_id = msg_data[0].as_str().map(|s| s.to_string()).unwrap_or_else(|| String::new());
+                                    
+                                    if let RedisValue::Array(fields_array) = &msg_data[1] {
+                                        let mut fields_map = HashMap::new();
+                                        
+                                        for i in (0..fields_array.len()).step_by(2) {
+                                            if i + 1 < fields_array.len() {
+                                                let key = fields_array[i].as_str().map(|s| s.to_string()).unwrap_or_else(|| String::new());
+                                                let value = fields_array[i + 1].as_str().map(|s| s.to_string()).unwrap_or_else(|| String::new());
+                                                fields_map.insert(key, value);
+                                            }
+                                        }
+                                        
+                                        if !msg_id.is_empty() && msg_id > *last_id {
+                                            *last_id = msg_id.clone();
+                                        }
+                                        
+                                        result.push((msg_id, fields_map));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            
-            if msg_id > *last_id {
-                *last_id = msg_id.clone();
-            }
-            
-            result.push((msg_id, fields_map));
         }
     }
-
+    
     Ok(result)
 }
 
@@ -113,6 +148,9 @@ async fn process_messages(
             "get_admin_by_email" => {
                 handlers::handle_get_admin_by_email(data, pool, request_id.clone()).await
             }
+            "get_admin_by_id" => {
+                handlers::handle_get_admin_by_id(data, pool, request_id.clone()).await
+            }
             "get_outcome_by_id" => {
                 handlers::handle_get_outcome_by_id(data, pool, request_id.clone()).await
             }
@@ -154,7 +192,7 @@ async fn process_messages(
                     format!("Unknown action: {}", action),
                     serde_json::json!(null),
                 );
-                handlers::send_read_response(request_id.clone(), error_response).await
+                handlers::send_read_response(&request_id, error_response).await
             }
         };
 

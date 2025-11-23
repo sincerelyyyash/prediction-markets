@@ -30,9 +30,17 @@ where
     let request_json = serde_json::to_string(&request)
         .map_err(|e| format!("Failed to serialize request: {}", e))?;
 
+    let stream_name = match request.service.as_str() {
+        "db_worker" => "db_read_requests",
+        "engine" => "server_requests",
+        _ => {
+            return Err(format!("Unknown service target: {}", request.service));
+        }
+    };
+
     redis_manager
         .stream_add(
-            "server_requests",
+            stream_name,
             &[
                 ("request_id", &request_id),
                 ("data", &request_json),
