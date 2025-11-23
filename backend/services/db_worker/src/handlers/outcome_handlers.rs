@@ -32,7 +32,7 @@ pub async fn handle_get_outcome_by_id(
                 "Outcome not found",
                 serde_json::json!(null),
             );
-            send_read_response(request_id, response).await?;
+            send_read_response(&request_id, response).await?;
             return Ok(());
         }
         Err(e) => {
@@ -42,7 +42,7 @@ pub async fn handle_get_outcome_by_id(
                 format!("Failed to fetch outcome: {}", e),
                 serde_json::json!(null),
             );
-            send_read_response(request_id, error_response).await?;
+            send_read_response(&request_id, error_response).await?;
             return Err(format!("Failed to fetch outcome: {}", e));
         }
     };
@@ -66,7 +66,7 @@ pub async fn handle_get_outcome_by_id(
                 format!("Failed to fetch markets: {}", e),
                 serde_json::json!(null),
             );
-            send_read_response(request_id, error_response).await?;
+            send_read_response(&request_id, error_response).await?;
             return Err(format!("Failed to fetch markets: {}", e));
         }
     };
@@ -99,7 +99,7 @@ pub async fn handle_get_outcome_by_id(
         response_data,
     );
 
-    send_read_response(request_id, response).await?;
+    send_read_response(&request_id, response).await?;
     info!("Processed get_outcome_by_id request: request_id={}", request_id);
     Ok(())
 }

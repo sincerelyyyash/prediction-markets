@@ -1,11 +1,10 @@
 use redis_client::{RedisManager, RedisResponse};
-use log::warn;
 
 pub const CACHE_TTL_EVENTS: i64 = 86400;
 pub const CACHE_TTL_SEARCH: i64 = 3600;
 
 pub async fn send_read_response(
-    request_id: String,
+    request_id: &str,
     response: RedisResponse<serde_json::Value>,
 ) -> Result<(), String> {
     let redis_manager = match RedisManager::global() {

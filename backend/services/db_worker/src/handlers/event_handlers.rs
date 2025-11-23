@@ -1,8 +1,8 @@
-use sqlx::PgPool;
+use sqlx::{PgPool, Row};
 use serde_json::Value;
 use log::{info, warn};
 use redis_client::{RedisManager, RedisResponse};
-use crate::models::{EventTable, OutcomeTable};
+use crate::models::OutcomeTable;
 use super::common::{send_read_response, CACHE_TTL_EVENTS, CACHE_TTL_SEARCH};
 
 pub async fn handle_get_all_events(
@@ -28,7 +28,7 @@ pub async fn handle_get_all_events(
                 format!("Failed to fetch events: {}", e),
                 serde_json::json!(null),
             );
-            send_read_response(request_id, error_response).await?;
+            send_read_response(&request_id, error_response).await?;
             return Err(format!("Failed to fetch events: {}", e));
         }
     };
@@ -56,7 +56,7 @@ pub async fn handle_get_all_events(
                     format!("Failed to fetch outcomes for event {}: {}", event.id, e),
                     serde_json::json!(null),
                 );
-                send_read_response(request_id, error_response).await?;
+                send_read_response(&request_id, error_response).await?;
                 return Err(format!("Failed to fetch outcomes: {}", e));
             }
         };
@@ -85,7 +85,7 @@ pub async fn handle_get_all_events(
                         format!("Failed to fetch markets for event {}: {}", event.id, e),
                         serde_json::json!(null),
                     );
-                    send_read_response(request_id, error_response).await?;
+                    send_read_response(&request_id, error_response).await?;
                     return Err(format!("Failed to fetch markets: {}", e));
                 }
             }
@@ -146,7 +146,7 @@ pub async fn handle_get_all_events(
         response_data,
     );
 
-    send_read_response(request_id, response).await?;
+    send_read_response(&request_id, response).await?;
     info!("Processed get_all_events request: request_id={}", request_id);
     Ok(())
 }
@@ -178,7 +178,7 @@ pub async fn handle_get_event_by_id(
                 "Event not found",
                 serde_json::json!(null),
             );
-            send_read_response(request_id, response).await?;
+            send_read_response(&request_id, response).await?;
             return Ok(());
         }
         Err(e) => {
@@ -188,7 +188,7 @@ pub async fn handle_get_event_by_id(
                 format!("Failed to load event: {}", e),
                 serde_json::json!(null),
             );
-            send_read_response(request_id, error_response).await?;
+            send_read_response(&request_id, error_response).await?;
             return Err(format!("Failed to load event: {}", e));
         }
     };
@@ -212,7 +212,7 @@ pub async fn handle_get_event_by_id(
                 format!("Failed to load outcomes: {}", e),
                 serde_json::json!(null),
             );
-            send_read_response(request_id, error_response).await?;
+            send_read_response(&request_id, error_response).await?;
             return Err(format!("Failed to load outcomes: {}", e));
         }
     };
@@ -241,7 +241,7 @@ pub async fn handle_get_event_by_id(
                     format!("Failed to load markets: {}", e),
                     serde_json::json!(null),
                 );
-                send_read_response(request_id, error_response).await?;
+                send_read_response(&request_id, error_response).await?;
                 return Err(format!("Failed to load markets: {}", e));
             }
         }
@@ -299,7 +299,7 @@ pub async fn handle_get_event_by_id(
         response_data,
     );
 
-    send_read_response(request_id, response).await?;
+    send_read_response(&request_id, response).await?;
     info!("Processed get_event_by_id request: request_id={}, event_id={}", request_id, event_id);
     Ok(())
 }
@@ -333,11 +333,11 @@ pub async fn handle_search_events(
         if !search_term.is_empty() {
             let search_pattern = format!("%{}%", search_term);
             query_builder.push(" AND (title ILIKE ");
-            query_builder.push_bind(&search_pattern);
+            query_builder.push_bind(search_pattern.clone());
             query_builder.push(" OR description ILIKE ");
-            query_builder.push_bind(&search_pattern);
+            query_builder.push_bind(search_pattern.clone());
             query_builder.push(" OR slug ILIKE ");
-            query_builder.push_bind(&search_pattern);
+            query_builder.push_bind(search_pattern);
             query_builder.push(")");
         }
     }
@@ -382,7 +382,7 @@ pub async fn handle_search_events(
                 format!("Failed to search events: {}", e),
                 serde_json::json!(null),
             );
-            send_read_response(request_id, error_response).await?;
+            send_read_response(&request_id, error_response).await?;
             return Err(format!("Failed to search events: {}", e));
         }
     };
@@ -410,7 +410,7 @@ pub async fn handle_search_events(
                     format!("Failed to fetch outcomes for event {}: {}", event_id, e),
                     serde_json::json!(null),
                 );
-                send_read_response(request_id, error_response).await?;
+                send_read_response(&request_id, error_response).await?;
                 return Err(format!("Failed to fetch outcomes: {}", e));
             }
         };
@@ -439,7 +439,7 @@ pub async fn handle_search_events(
                         format!("Failed to fetch markets for event {}: {}", event_id, e),
                         serde_json::json!(null),
                     );
-                    send_read_response(request_id, error_response).await?;
+                    send_read_response(&request_id, error_response).await?;
                     return Err(format!("Failed to fetch markets: {}", e));
                 }
             }
@@ -496,7 +496,7 @@ pub async fn handle_search_events(
         response_data,
     );
 
-    send_read_response(request_id, response).await?;
+    send_read_response(&request_id, response).await?;
     info!("Processed search_events request: request_id={}", request_id);
     Ok(())
 }

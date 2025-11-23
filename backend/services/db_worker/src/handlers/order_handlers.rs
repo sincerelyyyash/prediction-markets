@@ -32,7 +32,7 @@ pub async fn handle_get_order_by_id(
                 "Order not found",
                 serde_json::json!(null),
             );
-            send_read_response(request_id, response).await?;
+            send_read_response(&request_id, response).await?;
             return Ok(());
         }
         Err(e) => {
@@ -42,7 +42,7 @@ pub async fn handle_get_order_by_id(
                 format!("Failed to fetch order: {}", e),
                 serde_json::json!(null),
             );
-            send_read_response(request_id, error_response).await?;
+            send_read_response(&request_id, error_response).await?;
             return Err(format!("Failed to fetch order: {}", e));
         }
     };
@@ -55,7 +55,7 @@ pub async fn handle_get_order_by_id(
                 "Access denied",
                 serde_json::json!(null),
             );
-            send_read_response(request_id, response).await?;
+            send_read_response(&request_id, response).await?;
             return Ok(());
         }
     }
@@ -87,7 +87,7 @@ pub async fn handle_get_order_by_id(
         response_data,
     );
 
-    send_read_response(request_id, response).await?;
+    send_read_response(&request_id, response).await?;
     info!("Processed get_order_by_id request: request_id={}, order_id={}", request_id, order_id);
     Ok(())
 }
@@ -120,7 +120,7 @@ pub async fn handle_get_orders_by_user(
                 format!("Failed to fetch orders: {}", e),
                 serde_json::json!(null),
             );
-            send_read_response(request_id, error_response).await?;
+            send_read_response(&request_id, error_response).await?;
             return Err(format!("Failed to fetch orders: {}", e));
         }
     };
@@ -157,7 +157,7 @@ pub async fn handle_get_orders_by_user(
         response_data,
     );
 
-    send_read_response(request_id, response).await?;
+    send_read_response(&request_id, response).await?;
     info!("Processed get_orders_by_user request: request_id={}, user_id={}", request_id, user_id);
     Ok(())
 }
@@ -190,7 +190,7 @@ pub async fn handle_get_orders_by_market(
                 format!("Failed to fetch orders: {}", e),
                 serde_json::json!(null),
             );
-            send_read_response(request_id, error_response).await?;
+            send_read_response(&request_id, error_response).await?;
             return Err(format!("Failed to fetch orders: {}", e));
         }
     };
@@ -227,7 +227,7 @@ pub async fn handle_get_orders_by_market(
         response_data,
     );
 
-    send_read_response(request_id, response).await?;
+    send_read_response(&request_id, response).await?;
     info!("Processed get_orders_by_market request: request_id={}, market_id={}", request_id, market_id);
     Ok(())
 }

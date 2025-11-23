@@ -32,7 +32,7 @@ pub async fn handle_get_user_by_email(
                 "User not found",
                 serde_json::json!(null),
             );
-            send_read_response(request_id, response).await?;
+            send_read_response(&request_id, response).await?;
             return Ok(());
         }
         Err(e) => {
@@ -42,7 +42,7 @@ pub async fn handle_get_user_by_email(
                 format!("Failed to fetch user: {}", e),
                 serde_json::json!(null),
             );
-            send_read_response(request_id, error_response).await?;
+            send_read_response(&request_id, error_response).await?;
             return Err(format!("Failed to fetch user: {}", e));
         }
     };
@@ -62,7 +62,7 @@ pub async fn handle_get_user_by_email(
         response_data,
     );
 
-    send_read_response(request_id, response).await?;
+    send_read_response(&request_id, response).await?;
     info!("Processed get_user_by_email request: request_id={}", request_id);
     Ok(())
 }
@@ -94,7 +94,7 @@ pub async fn handle_get_user_by_id(
                 "User not found",
                 serde_json::json!(null),
             );
-            send_read_response(request_id, response).await?;
+            send_read_response(&request_id, response).await?;
             return Ok(());
         }
         Err(e) => {
@@ -104,7 +104,7 @@ pub async fn handle_get_user_by_id(
                 format!("Failed to fetch user: {}", e),
                 serde_json::json!(null),
             );
-            send_read_response(request_id, error_response).await?;
+            send_read_response(&request_id, error_response).await?;
             return Err(format!("Failed to fetch user: {}", e));
         }
     };
@@ -127,13 +127,13 @@ pub async fn handle_get_user_by_id(
         response_data,
     );
 
-    send_read_response(request_id, response).await?;
+    send_read_response(&request_id, response).await?;
     info!("Processed get_user_by_id request: request_id={}, user_id={}", request_id, user_id);
     Ok(())
 }
 
 pub async fn handle_get_all_users(
-    data: Value,
+    _data: Value,
     pool: &PgPool,
     request_id: String,
 ) -> Result<(), String> {
@@ -155,7 +155,7 @@ pub async fn handle_get_all_users(
                 format!("Failed to fetch users: {}", e),
                 serde_json::json!(null),
             );
-            send_read_response(request_id, error_response).await?;
+            send_read_response(&request_id, error_response).await?;
             return Err(format!("Failed to fetch users: {}", e));
         }
     };
@@ -183,7 +183,7 @@ pub async fn handle_get_all_users(
         response_data,
     );
 
-    send_read_response(request_id, response).await?;
+    send_read_response(&request_id, response).await?;
     info!("Processed get_all_users request: request_id={}", request_id);
     Ok(())
 }

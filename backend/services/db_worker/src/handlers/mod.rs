@@ -6,8 +6,10 @@ pub mod outcome_handlers;
 pub mod trade_handlers;
 pub mod order_handlers;
 pub mod position_handlers;
+pub mod db_event_handlers;
 
 pub use common::send_read_response;
+pub use db_event_handlers::handle_db_event;
 pub use event_handlers::{
     handle_get_all_events,
     handle_get_event_by_id,
@@ -18,7 +20,7 @@ pub use user_handlers::{
     handle_get_user_by_id,
     handle_get_all_users,
 };
-pub use admin_handlers::handle_get_admin_by_email;
+pub use admin_handlers::{handle_get_admin_by_email, handle_get_admin_by_id};
 pub use outcome_handlers::handle_get_outcome_by_id;
 pub use trade_handlers::{
     handle_get_trades_by_user,

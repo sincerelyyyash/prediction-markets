@@ -32,7 +32,7 @@ pub async fn handle_get_trades_by_user(
                 format!("Failed to fetch trades: {}", e),
                 serde_json::json!(null),
             );
-            send_read_response(request_id, error_response).await?;
+            send_read_response(&request_id, error_response).await?;
             return Err(format!("Failed to fetch trades: {}", e));
         }
     };
@@ -66,7 +66,7 @@ pub async fn handle_get_trades_by_user(
         response_data,
     );
 
-    send_read_response(request_id, response).await?;
+    send_read_response(&request_id, response).await?;
     info!("Processed get_trades_by_user request: request_id={}, user_id={}", request_id, user_id);
     Ok(())
 }
@@ -98,7 +98,7 @@ pub async fn handle_get_trade_by_id(
                 "Trade not found",
                 serde_json::json!(null),
             );
-            send_read_response(request_id, response).await?;
+            send_read_response(&request_id, response).await?;
             return Ok(());
         }
         Err(e) => {
@@ -108,7 +108,7 @@ pub async fn handle_get_trade_by_id(
                 format!("Failed to fetch trade: {}", e),
                 serde_json::json!(null),
             );
-            send_read_response(request_id, error_response).await?;
+            send_read_response(&request_id, error_response).await?;
             return Err(format!("Failed to fetch trade: {}", e));
         }
     };
@@ -137,7 +137,7 @@ pub async fn handle_get_trade_by_id(
         response_data,
     );
 
-    send_read_response(request_id, response).await?;
+    send_read_response(&request_id, response).await?;
     info!("Processed get_trade_by_id request: request_id={}, trade_id={}", request_id, trade_id);
     Ok(())
 }
@@ -170,7 +170,7 @@ pub async fn handle_get_trades_by_market(
                 format!("Failed to fetch trades: {}", e),
                 serde_json::json!(null),
             );
-            send_read_response(request_id, error_response).await?;
+            send_read_response(&request_id, error_response).await?;
             return Err(format!("Failed to fetch trades: {}", e));
         }
     };
@@ -204,7 +204,7 @@ pub async fn handle_get_trades_by_market(
         response_data,
     );
 
-    send_read_response(request_id, response).await?;
+    send_read_response(&request_id, response).await?;
     info!("Processed get_trades_by_market request: request_id={}, market_id={}", request_id, market_id);
     Ok(())
 }

@@ -275,7 +275,8 @@ async fn handle_position_updated(event: Value, pool: &PgPool) -> Result<(), Stri
         )
         .fetch_one(pool)
         .await
-        .map_err(|e| format!("Failed to check position existence: {}", e))?;
+        .map_err(|e| format!("Failed to check position existence: {}", e))?
+        .unwrap_or(false);
 
         if exists {
             sqlx::query!(
