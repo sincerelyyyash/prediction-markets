@@ -1,5 +1,6 @@
 use actix_web::{
     dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform},
+    error::{ErrorUnauthorized, ErrorInternalServerError},
     Error, HttpMessage, HttpResponse,
 };
 use futures_util::future::LocalBoxFuture;
@@ -57,10 +58,10 @@ where
                     Ok(s) => s,
                     Err(_) => {
                         return Box::pin(async {
-                            Err(Error::from(HttpResponse::Unauthorized().json(json!({
+                            Err(ErrorUnauthorized(json!({
                                 "status": "error",
                                 "message": "Invalid Authorization header"
-                            }))))
+                            })))
                         });
                     }
                 };
@@ -69,10 +70,10 @@ where
                     Some(t) => t,
                     None => {
                         return Box::pin(async {
-                            Err(Error::from(HttpResponse::Unauthorized().json(json!({
+                            Err(ErrorUnauthorized(json!({
                                 "status": "error",
                                 "message": "Invalid token format"
-                            }))))
+                            })))
                         });
                     }
                 };
@@ -81,10 +82,10 @@ where
                     Ok(secret) => secret,
                     Err(_) => {
                         return Box::pin(async {
-                            Err(Error::from(HttpResponse::InternalServerError().json(json!({
+                            Err(ErrorInternalServerError(json!({
                                 "status": "error",
                                 "message": "JWT secret not configured"
-                            }))))
+                            })))
                         });
                     }
                 };
@@ -93,20 +94,20 @@ where
                     Ok(id) => id,
                     Err(_) => {
                         return Box::pin(async {
-                            Err(Error::from(HttpResponse::Unauthorized().json(json!({
+                            Err(ErrorUnauthorized(json!({
                                 "status": "error",
                                 "message": "Invalid or expired token"
-                            }))))
+                            })))
                         });
                     }
                 }
             }
             None => {
                 return Box::pin(async {
-                    Err(Error::from(HttpResponse::Unauthorized().json(json!({
+                    Err(ErrorUnauthorized(json!({
                         "status": "error",
                         "message": "Missing Authorization header"
-                    }))))
+                    })))
                 });
             }
         };

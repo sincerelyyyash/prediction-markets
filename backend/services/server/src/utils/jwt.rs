@@ -1,7 +1,7 @@
 use chrono::{Duration, Utc};
 use jsonwebtoken::{encode, decode, EncodingKey, DecodingKey, Header, Validation};
 use serde::{Deserialize, Serialize};
-use actix_web::{HttpRequest, HttpResponse};
+use actix_web::{HttpMessage, HttpRequest, HttpResponse};
 use serde_json::json;
 use std::env;
 

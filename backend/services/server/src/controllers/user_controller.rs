@@ -12,7 +12,7 @@ use uuid::Uuid;
 use chrono::Utc;
 use std::env;
 
-#[post("user/signup")]
+#[post("/user/signup")]
 pub async fn signup_user(req: web::Json<SignUpUserInput>) -> impl Responder {
     if let Err(e) = req.validate(){
         return HttpResponse::BadRequest().json(json!({
@@ -92,7 +92,7 @@ pub async fn signup_user(req: web::Json<SignUpUserInput>) -> impl Responder {
     }))
 }
 
-#[post("user/signin")]
+#[post("/user/signin")]
 pub async fn signin_user(req: web::Json<LoginUserInput>) -> impl Responder {
     if let Err(e) = req.validate(){
         return HttpResponse::BadRequest().json(json!({

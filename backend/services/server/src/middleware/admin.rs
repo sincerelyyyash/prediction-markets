@@ -1,6 +1,7 @@
 use actix_web::{
     dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform},
-    Error, HttpMessage, HttpResponse,
+    error::ErrorUnauthorized,
+    Error, HttpMessage,
 };
 use futures_util::future::LocalBoxFuture;
 use serde_json::json;
@@ -8,6 +9,9 @@ use std::{
     future::{ready, Ready},
     rc::Rc,
 };
+use crate::utils::redis_stream::send_request_and_wait;
+use redis_client::RedisRequest;
+use uuid::Uuid;
 
 pub struct AdminMiddleware;
 
@@ -51,18 +55,44 @@ where
             Some(id) => *id,
             None => {
                 return Box::pin(async {
-                    Err(Error::from(HttpResponse::Unauthorized().json(json!({
+                    Err(ErrorUnauthorized(json!({
                         "status": "error",
                         "message": "Authentication required"
-                    }))))
+                    })))
                 });
             }
         };
 
+        let request_id = Uuid::new_v4().to_string();
+        let admin_check_request = RedisRequest::new(
+            "db_worker",
+            "get_admin_by_id",
+            "Check if user is admin",
+            json!({
+                "id": user_id,
+            }),
+        );
+
         let service = self.service.clone();
         Box::pin(async move {
-            let res = service.call(req).await?;
-            Ok(res)
+            match send_request_and_wait(request_id, admin_check_request, 5).await {
+                Ok(response) => {
+                    if response.status_code == 404 || !response.success {
+                        return Err(ErrorUnauthorized(json!({
+                            "status": "error",
+                            "message": "Admin access required"
+                        })));
+                    }
+                    let res = service.call(req).await?;
+                    Ok(res)
+                }
+                Err(_) => {
+                    Err(ErrorUnauthorized(json!({
+                        "status": "error",
+                        "message": "Failed to verify admin status"
+                    })))
+                }
+            }
         })
     }
 }
