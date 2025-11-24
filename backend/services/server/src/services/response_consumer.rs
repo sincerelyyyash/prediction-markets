@@ -1,6 +1,5 @@
 use crate::utils::redis_stream::resolve_pending_request;
 use fred::prelude::*;
-use fred::types::XReadResponse;
 use log::{error, info};
 use redis_client::RedisManager;
 use redis_client::RedisResponse;
