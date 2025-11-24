@@ -120,3 +120,22 @@ pub struct MergeOrderRequest {
     pub market2_id: u64,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct MarketOutcomeData {
+    pub outcome_id: u64,
+    pub yes_market_id: u64,
+    pub no_market_id: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct InitEventMarketsRequest {
+    pub event_id: u64,
+    pub outcomes: Vec<MarketOutcomeData>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CloseEventMarketsRequest {
+    pub event_id: u64,
+    pub winning_outcome_id: u64,
+}
+
