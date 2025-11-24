@@ -13,6 +13,7 @@ use crate::store::orderbook_actions::add_order_to_book;
 use crate::store::orderbook_actions::remove_order_from_book;
 use crate::types::orderbook_types::{Level, Order, OrderbookData, OrderbookSnapshot, OrderSide};
 use crate::types::user_types::User;
+use crate::types::market_types::MarketMeta;
 use crate::types::db_event_types::{
     DbEvent, OrderPlacedEvent, OrderCancelledEvent, OrderModifiedEvent,
     PositionUpdatedEvent, BalanceUpdatedEvent,
@@ -42,6 +43,8 @@ enum Command {
     CheckPositionSufficient(u64, u64, u64, oneshot::Sender<Result<bool, String>>),
     CreateSplitPosition(u64, u64, u64, u64, oneshot::Sender<Result<(), String>>),
     MergePosition(u64, u64, u64, oneshot::Sender<Result<(), String>>),
+    InitMarkets(Vec<MarketMeta>, oneshot::Sender<Result<(), String>>),
+    CloseEventMarkets(u64, u64, oneshot::Sender<Result<(), String>>),
 }
 
 #[derive(Clone)]
@@ -223,6 +226,65 @@ impl Orderbook {
         rx.await
             .unwrap_or_else(|_| Err("Failed to merge position".into()))
     }
+
+    pub async fn init_markets(&self, metas: Vec<MarketMeta>) -> Result<(), String> {
+        let(tx, rx) = oneshot::channel();
+        let _ = self.tx.send(Command::InitMarkets(metas, tx)).await;
+        rx.await
+            .unwrap_or_else(|_| Err("Failed to init markets".into()))
+    }
+
+    pub async fn close_event_markets(&self, event_id: u64, winning_outcome_id: u64) -> Result<(), String> {
+        let(tx, rx) = oneshot::channel();
+        let _ = self.tx.send(Command::CloseEventMarkets(event_id, winning_outcome_id, tx)).await;
+        rx.await
+            .unwrap_or_else(|_| Err("Failed to close event markets".into()))
+    }
+}
+
+fn normalize_order(order: &mut Order, market_store: &MarketStore) -> Result<u64, String> {
+    let Some(market) = market_store.get_market(order.market_id) else {
+        return Err("Market not found".into());
+    };
+
+    if order.price > 100 {
+        return Err("Price must be between 0 and 100".into());
+    }
+
+    if let Some(side) = &market.side {
+        use crate::types::market_types::MarketSide;
+        match side {
+            MarketSide::No => {
+                if let Some(paired_id) = market.paired_market_id {
+                    order.market_id = paired_id;
+                    order.price = 100 - order.price;
+                    order.side = match order.side {
+                        OrderSide::Bid => OrderSide::Ask,
+                        OrderSide::Ask => OrderSide::Bid,
+                    };
+                }
+            }
+            MarketSide::Yes => {}
+        }
+    }
+
+    Ok(order.market_id)
+}
+
+fn denormalize_price(market_id: u64, canonical_price: u64, market_store: &MarketStore) -> u64 {
+    let Some(market) = market_store.get_market(market_id) else {
+        return canonical_price;
+    };
+    
+    if let Some(side) = &market.side {
+        use crate::types::market_types::MarketSide;
+        match side {
+            MarketSide::No => 100 - canonical_price,
+            MarketSide::Yes => canonical_price,
+        }
+    } else {
+        canonical_price
+    }
 }
 
 pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
@@ -231,24 +293,32 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
     tokio::spawn(async move {
         let mut orderbooks: HashMap<u64, OrderbookData> = HashMap::new();
         let mut users: HashMap<u64, User> = HashMap::new();
+        let mut alias_map: HashMap<u64, u64> = HashMap::new();
+        let mut order_original_market: HashMap<u64, u64> = HashMap::new();
 
         while let Some(cmd) = rx.recv().await {
             match cmd {
                 Command::PlaceOrder(mut order, reply) => {
-                    let book = orderbooks
-                        .entry(order.market_id)
-                        .or_insert_with(|| OrderbookData {
-                            market_id: order.market_id,
-                            asks: BTreeMap::new(),
-                            bids: BTreeMap::new(),
-                            ask_queue: HashMap::new(),
-                            bid_queue: HashMap::new(),
-                            orders: HashMap::new(),
-                            last_price: None,
-                        });
+                    let original_market_id = order.market_id;
+                    let original_price = order.price;
+                    let original_side = order.side.clone();
+
+                    let canonical_market_id = match normalize_order(&mut order, &market_store) {
+                        Ok(id) => id,
+                        Err(e) => {
+                            let _ = reply.send(Err(e));
+                            continue;
+                        }
+                    };
+
+                    let Some(book) = orderbooks.get_mut(&canonical_market_id) else {
+                        let _ = reply.send(Err("Orderbook not found for market".into()));
+                        continue;
+                    };
 
                     let id = Uuid::new_v4().as_u128() as u64;
                     order.order_id = Some(id);
+                    order_original_market.insert(id, original_market_id);
 
                     if let Err(e) = reserve_balance(&order, &mut users).await {
                         let _ = reply.send(Err(e));
@@ -257,6 +327,7 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
 
                     if let Err(e) = match_order(&mut order, book, &mut users, &market_store).await {
                         let _ = return_reserved_balance(&order, &mut users).await;
+                        order_original_market.remove(&id);
                         let _ = reply.send(Err(e));
                         continue;
                     }
@@ -265,27 +336,34 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                         add_order_to_book(id, &order, book);
                     } else {
                         let _ = return_unused_reservation(&order, &mut users).await;
+                        order_original_market.remove(&id);
                     }
 
-                    let side_str = match order.side {
+                    let side_str = match original_side {
                         OrderSide::Bid => "Bid",
                         OrderSide::Ask => "Ask",
                     };
                     let _ = publish_db_event(DbEvent::OrderPlaced(OrderPlacedEvent {
                         order_id: id,
                         user_id: order.user_id,
-                        market_id: order.market_id,
+                        market_id: original_market_id,
                         side: side_str.to_string(),
-                        price: order.price,
+                        price: original_price,
                         original_qty: order.original_qty,
                         remaining_qty: order.remaining_qty,
                         timestamp: Utc::now(),
                     })).await;
 
-                    let _ = reply.send(Ok(order));
+                    let mut response_order = order.clone();
+                    response_order.market_id = original_market_id;
+                    response_order.price = original_price;
+                    response_order.side = original_side;
+                    let _ = reply.send(Ok(response_order));
                 }
                 Command::CancelOrder(market_id, order_id, reply) => {
-                    let Some(book) = orderbooks.get_mut(&market_id) else {
+                    let original_market_id = order_original_market.get(&order_id).copied().unwrap_or(market_id);
+                    let canonical_id = alias_map.get(&original_market_id).copied().unwrap_or(original_market_id);
+                    let Some(book) = orderbooks.get_mut(&canonical_id) else {
                         let _ = reply.send(Err("Market not found".into()));
                         continue;
                     };
@@ -295,6 +373,25 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                         continue;
                     };
 
+                    order_original_market.remove(&order_id);
+                    let original_price = denormalize_price(original_market_id, order.price, &market_store);
+                    let original_side = if let Some(market) = market_store.get_market(original_market_id) {
+                        if let Some(side) = &market.side {
+                            use crate::types::market_types::MarketSide;
+                            match side {
+                                MarketSide::No => match order.side {
+                                    OrderSide::Bid => OrderSide::Ask,
+                                    OrderSide::Ask => OrderSide::Bid,
+                                },
+                                MarketSide::Yes => order.side.clone(),
+                            }
+                        } else {
+                            order.side.clone()
+                        }
+                    } else {
+                        order.side.clone()
+                    };
+
                     remove_order_from_book(order_id, &order, book);
 
                     let _ = return_reserved_balance(&order, &mut users).await;
@@ -302,14 +399,30 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                     let _ = publish_db_event(DbEvent::OrderCancelled(OrderCancelledEvent {
                         order_id,
                         user_id: order.user_id,
-                        market_id: order.market_id,
+                        market_id: original_market_id,
                         timestamp: Utc::now(),
                     })).await;
 
-                    let _ = reply.send(Ok(order));
+                    let mut response_order = order;
+                    response_order.market_id = original_market_id;
+                    response_order.price = original_price;
+                    response_order.side = original_side;
+                    let _ = reply.send(Ok(response_order));
                 }
                 Command::ModifyOrder(mut order, reply) => {
-                    let Some(book) = orderbooks.get_mut(&order.market_id) else {
+                    let original_market_id = order.market_id;
+                    let original_price = order.price;
+                    let original_side = order.side.clone();
+
+                    let canonical_market_id = match normalize_order(&mut order, &market_store) {
+                        Ok(id) => id,
+                        Err(e) => {
+                            let _ = reply.send(Err(e));
+                            continue;
+                        }
+                    };
+
+                    let Some(book) = orderbooks.get_mut(&canonical_market_id) else {
                         let _ = reply.send(Err("Market not found".into()));
                         continue;
                     };
@@ -324,12 +437,17 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                         continue;
                     };
 
+                    let old_original_market_id = order_original_market.get(&order_id).copied();
+
                     remove_order_from_book(order_id, &existing_order, book);
 
                     let _ = return_reserved_balance(&existing_order, &mut users).await;
 
                     order.order_id = Some(order_id);
                     order.remaining_qty = order.original_qty;
+                    if let Some(old_market) = old_original_market_id {
+                        order_original_market.insert(order_id, old_market);
+                    }
 
                     if let Err(e) = reserve_balance(&order, &mut users).await {
                         let _ = reply.send(Err(e));
@@ -351,17 +469,22 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                     let _ = publish_db_event(DbEvent::OrderModified(OrderModifiedEvent {
                         order_id,
                         user_id: order.user_id,
-                        market_id: order.market_id,
-                        price: order.price,
+                        market_id: original_market_id,
+                        price: original_price,
                         original_qty: order.original_qty,
                         remaining_qty: order.remaining_qty,
                         timestamp: Utc::now(),
                     })).await;
 
-                    let _ = reply.send(Ok(order));
+                    let mut response_order = order;
+                    response_order.market_id = original_market_id;
+                    response_order.price = original_price;
+                    response_order.side = original_side;
+                    let _ = reply.send(Ok(response_order));
                 }
                 Command::GetBestBid(market_id, reply) => {
-                    let Some(book) = orderbooks.get(&market_id) else {
+                    let canonical_id = alias_map.get(&market_id).copied().unwrap_or(market_id);
+                    let Some(book) = orderbooks.get(&canonical_id) else {
                         let _ = reply.send(Err("Market not found".into()));
                         continue;
                     };
@@ -371,10 +494,12 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                         continue;
                     };
 
-                    let _ = reply.send(Ok(*best_bid_price));
+                    let denormalized_price = denormalize_price(market_id, *best_bid_price, &market_store);
+                    let _ = reply.send(Ok(denormalized_price));
                 }
                 Command::GetBestAsk(market_id, reply) => {
-                    let Some(book) = orderbooks.get(&market_id) else {
+                    let canonical_id = alias_map.get(&market_id).copied().unwrap_or(market_id);
+                    let Some(book) = orderbooks.get(&canonical_id) else {
                         let _ = reply.send(Err("Market not found".into()));
                         continue;
                     };
@@ -384,10 +509,12 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                         continue;
                     };
 
-                    let _ = reply.send(Ok(*best_ask_price));
+                    let denormalized_price = denormalize_price(market_id, *best_ask_price, &market_store);
+                    let _ = reply.send(Ok(denormalized_price));
                 }
                 Command::GetOrderBook(market_id, reply) => {
-                    let Some(book) = orderbooks.get(&market_id) else {
+                    let canonical_id = alias_map.get(&market_id).copied().unwrap_or(market_id);
+                    let Some(book) = orderbooks.get(&canonical_id) else {
                         let _ = reply.send(Err("Market not found".into()));
                         continue;
                     };
@@ -397,7 +524,7 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                         .iter()
                         .rev()
                         .map(|(price, quantity)| Level {
-                            price: *price,
+                            price: denormalize_price(market_id, *price, &market_store),
                             quantity: *quantity,
                         })
                         .collect();
@@ -406,16 +533,18 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                         .asks
                         .iter()
                         .map(|(price, quantity)| Level {
-                            price: *price,
+                            price: denormalize_price(market_id, *price, &market_store),
                             quantity: *quantity,
                         })
                         .collect();
+
+                    let last_price = book.last_price.map(|p| denormalize_price(market_id, p, &market_store));
 
                     let snapshot = OrderbookSnapshot {
                         market_id,
                         bids,
                         asks,
-                        last_price: book.last_price,
+                        last_price,
                     };
 
                     let _ = reply.send(Ok(snapshot));
@@ -423,10 +552,37 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                 Command::GetUserOpenOrders(user_id, reply) => {
                     let mut user_orders = Vec::new();
 
-                    for book in orderbooks.values() {
+                    for (_canonical_market_id, book) in &orderbooks {
                         for order in book.orders.values() {
                             if order.user_id == user_id {
-                                user_orders.push(order.clone());
+                                if let Some(order_id) = order.order_id {
+                                    if let Some(original_market_id) = order_original_market.get(&order_id) {
+                                        let mut denormalized_order = order.clone();
+                                        if let Some(market) = market_store.get_market(*original_market_id) {
+                                            if let Some(side) = &market.side {
+                                                use crate::types::market_types::MarketSide;
+                                                match side {
+                                                    MarketSide::No => {
+                                                        denormalized_order.market_id = *original_market_id;
+                                                        denormalized_order.price = 100 - denormalized_order.price;
+                                                        denormalized_order.side = match denormalized_order.side {
+                                                            OrderSide::Bid => OrderSide::Ask,
+                                                            OrderSide::Ask => OrderSide::Bid,
+                                                        };
+                                                    }
+                                                    MarketSide::Yes => {
+                                                        denormalized_order.market_id = *original_market_id;
+                                                    }
+                                                }
+                                            } else {
+                                                denormalized_order.market_id = *original_market_id;
+                                            }
+                                        } else {
+                                            denormalized_order.market_id = *original_market_id;
+                                        }
+                                        user_orders.push(denormalized_order);
+                                    }
+                                }
                             }
                         }
                     }
@@ -436,7 +592,7 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                 Command::GetOrderStatus(order_id, reply) => {
                     let mut found_order: Option<Order> = None;
 
-                    for book in orderbooks.values() {
+                    for (_canonical_id, book) in &orderbooks {
                         if let Some(order) = book.orders.get(&order_id) {
                             found_order = Some(order.clone());
                             break;
@@ -444,7 +600,31 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                     }
 
                     match found_order {
-                        Some(order) => {
+                        Some(mut order) => {
+                            if let Some(original_market_id) = order_original_market.get(&order_id) {
+                                if let Some(market) = market_store.get_market(*original_market_id) {
+                                    if let Some(side) = &market.side {
+                                        use crate::types::market_types::MarketSide;
+                                        match side {
+                                            MarketSide::No => {
+                                                order.market_id = *original_market_id;
+                                                order.price = 100 - order.price;
+                                                order.side = match order.side {
+                                                    OrderSide::Bid => OrderSide::Ask,
+                                                    OrderSide::Ask => OrderSide::Bid,
+                                                };
+                                            }
+                                            MarketSide::Yes => {
+                                                order.market_id = *original_market_id;
+                                            }
+                                        }
+                                    } else {
+                                        order.market_id = *original_market_id;
+                                    }
+                                } else {
+                                    order.market_id = *original_market_id;
+                                }
+                            }
                             let _ = reply.send(Ok(order));
                         }
                         None => {
@@ -619,6 +799,119 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                         timestamp: Utc::now(),
                     })).await;
 
+                    let _ = reply.send(Ok(()));
+                }
+                Command::InitMarkets(metas, reply) => {
+                    let mut error_msg: Option<String> = None;
+                    for meta in &metas {
+                        if let Err(e) = market_store.register_market_pair(meta.clone()) {
+                            error_msg = Some(format!("Failed to register market pair: {}", e));
+                            break;
+                        }
+
+                        alias_map.insert(meta.yes_market_id, meta.yes_market_id);
+                        alias_map.insert(meta.no_market_id, meta.yes_market_id);
+
+                        orderbooks.insert(meta.yes_market_id, OrderbookData {
+                            market_id: meta.yes_market_id,
+                            asks: BTreeMap::new(),
+                            bids: BTreeMap::new(),
+                            ask_queue: HashMap::new(),
+                            bid_queue: HashMap::new(),
+                            orders: HashMap::new(),
+                            last_price: None,
+                        });
+                    }
+                    match error_msg {
+                        Some(e) => {
+                            let _ = reply.send(Err(e));
+                        }
+                        None => {
+                            let _ = reply.send(Ok(()));
+                        }
+                    }
+                }
+                Command::CloseEventMarkets(event_id, winning_outcome_id, reply) => {
+                    let market_ids = market_store.get_markets_by_event(event_id);
+                    let mut canonical_ids = std::collections::HashSet::new();
+
+                    for market_id in &market_ids {
+                        if let Some(canonical_id) = alias_map.get(market_id) {
+                            canonical_ids.insert(*canonical_id);
+                        }
+                    }
+
+                    for canonical_id in canonical_ids {
+                        if let Some(book) = orderbooks.get(&canonical_id) {
+                            for (order_id, order) in &book.orders {
+                                let _ = return_reserved_balance(order, &mut users).await;
+                                let original_market_id = order_original_market.get(order_id).copied().unwrap_or(order.market_id);
+                                let _ = publish_db_event(DbEvent::OrderCancelled(OrderCancelledEvent {
+                                    order_id: *order_id,
+                                    user_id: order.user_id,
+                                    market_id: original_market_id,
+                                    timestamp: Utc::now(),
+                                })).await;
+                                order_original_market.remove(order_id);
+                            }
+                        }
+                        orderbooks.remove(&canonical_id);
+                    }
+
+                    for market_id in &market_ids {
+                        alias_map.remove(market_id);
+                    }
+
+                    let market_ids_set: std::collections::HashSet<u64> = market_ids.iter().cloned().collect();
+
+                    for user in users.values_mut() {
+                        let mut positions_to_remove = Vec::new();
+                        let mut total_payout = 0i64;
+
+                        for (market_id, quantity) in &user.positions.clone() {
+                            if !market_ids_set.contains(market_id) {
+                                continue;
+                            }
+
+                            if let Some(market) = market_store.get_market(*market_id) {
+                                if let (Some(market_outcome_id), Some(side)) = (market.outcome_id, &market.side) {
+                                    use crate::types::market_types::MarketSide;
+                                    let is_winning = match side {
+                                        MarketSide::Yes => market_outcome_id == winning_outcome_id,
+                                        MarketSide::No => market_outcome_id != winning_outcome_id,
+                                    };
+
+                                    if is_winning {
+                                        let payout = (*quantity as i64) * 100;
+                                        total_payout += payout;
+                                    }
+                                    positions_to_remove.push(*market_id);
+                                }
+                            }
+                        }
+
+                        if total_payout > 0 {
+                            user.balance += total_payout;
+                            let _ = publish_db_event(DbEvent::BalanceUpdated(BalanceUpdatedEvent {
+                                user_id: user.id,
+                                balance: user.balance,
+                                timestamp: Utc::now(),
+                            })).await;
+                        }
+
+                        for market_id in positions_to_remove {
+                            user.positions.remove(&market_id);
+                            let _ = publish_db_event(DbEvent::PositionUpdated(PositionUpdatedEvent {
+                                user_id: user.id,
+                                market_id,
+                                quantity: 0,
+                                timestamp: Utc::now(),
+                            })).await;
+                        }
+                    }
+
+                    let _ = market_store.update_status_bulk(market_ids.clone(), crate::types::market_types::MarketStatus::Resolved);
+                    let _ = market_store.remove_markets_by_event(event_id);
                     let _ = reply.send(Ok(()));
                 }
             }
