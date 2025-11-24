@@ -6,6 +6,7 @@ use fred::prelude::*;
 use fred::types::XReadResponse;
 
 pub async fn start_response_consumer() {
+    info!("start_response_consumer() called");
     let redis_manager = match RedisManager::global() {
         Some(rm) => rm,
         None => {
@@ -16,9 +17,12 @@ pub async fn start_response_consumer() {
 
     let client = redis_manager.client();
     let stream_name = "engine_responses";
+    info!("About to spawn response consumer task");
 
     tokio::spawn(async move {
         info!("Starting response consumer for stream: {}", stream_name);
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        info!("Response consumer ready to start reading");
         let mut last_id = "0".to_string();
 
         loop {
@@ -44,90 +48,77 @@ async fn read_stream_messages(
     client: &RedisClient,
     stream: &str,
     last_id: &mut String,
-) -> Result<Vec<(String, Vec<(String, Vec<(String, String)>)>)>, RedisError> {
-    use std::collections::HashMap;
+) -> Result<Vec<(String, std::collections::HashMap<String, String>)>, RedisError> {
+    use fred::types::RedisValue;
     
     let streams = vec![stream];
     let ids = vec![last_id.as_str()];
     
-    let xread_result: XReadResponse<String, String, String, RedisValue> = match client
-        .xread(Some(10), None, streams, ids)
+    let raw_result: RedisValue = match client
+        .xread::<RedisValue, _, _>(Some(10), None, streams, ids)
         .await
     {
         Ok(result) => result,
         Err(e) => {
             let error_msg = e.to_string();
-            if error_msg.contains("Cannot convert to map") || error_msg.contains("Parse Error") {
-
-                return Ok(Vec::new());
-            }
-
+            error!("XREAD error: {}", error_msg);
             return Err(e);
         }
     };
     
-    // Convert XReadResponse to our format
-    let mut result: Vec<(String, Vec<(String, HashMap<String, String>)>)> = Vec::new();
-    for (stream_name, stream_entries) in xread_result.into_iter() {
-        let mut messages: Vec<(String, HashMap<String, String>)> = Vec::new();
-        
-        for (msg_id, fields) in stream_entries {
-            let mut fields_map: HashMap<String, String> = HashMap::new();
-            
-            for (key, value) in fields {
-                let key_str = key.to_string();
-                let value_str = value.as_str().map(|s| s.to_string()).unwrap_or_else(|| "".to_string());
-                fields_map.insert(key_str, value_str);
+    let mut result: Vec<(String, std::collections::HashMap<String, String>)> = Vec::new();
+    
+    if let RedisValue::Array(streams_array) = raw_result {
+        for stream_entry in streams_array {
+            if let RedisValue::Array(stream_data) = stream_entry {
+                if stream_data.len() >= 2 {
+                    if let RedisValue::Array(messages) = &stream_data[1] {
+                        for message in messages {
+                            if let RedisValue::Array(msg_data) = message {
+                                if msg_data.len() >= 2 {
+                                    let msg_id = msg_data[0].as_str().map(|s| s.to_string()).unwrap_or_else(|| String::new());
+                                    
+                                    if let RedisValue::Array(fields_array) = &msg_data[1] {
+                                        let mut fields_map = std::collections::HashMap::new();
+                                        
+                                        for i in (0..fields_array.len()).step_by(2) {
+                                            if i + 1 < fields_array.len() {
+                                                let key = fields_array[i].as_str().map(|s| s.to_string()).unwrap_or_else(|| String::new());
+                                                let value = fields_array[i + 1].as_str().map(|s| s.to_string()).unwrap_or_else(|| String::new());
+                                                fields_map.insert(key, value);
+                                            }
+                                        }
+                                        
+                                        if !msg_id.is_empty() && msg_id > *last_id {
+                                            *last_id = msg_id.clone();
+                                        }
+                                        
+                                        result.push((msg_id, fields_map));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            
-            messages.push((msg_id, fields_map));
-        }
-        
-        if !messages.is_empty() {
-            result.push((stream_name, messages));
         }
     }
     
-    let mut formatted_result = Vec::new();
-    for (stream_name, messages_vec) in result {
-        let mut messages = Vec::new();
-        for (msg_id, fields_map) in messages_vec {
-            let fields: Vec<(String, String)> = fields_map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-            messages.push((msg_id.clone(), fields));
-            if msg_id > *last_id {
-                *last_id = msg_id;
-            }
-        }
-        if !messages.is_empty() {
-            formatted_result.push((stream_name, messages));
-        }
-    }
-
-    Ok(formatted_result)
+    Ok(result)
 }
 
-async fn process_message(stream_data: Vec<(String, Vec<(String, Vec<(String, String)>)>)>) -> Result<(), String> {
-    for (_stream_name, messages) in stream_data {
-        for (_msg_id, fields) in messages {
-            let mut request_id: Option<String> = None;
-            let mut data_str: Option<String> = None;
-            
-            for (key, value) in &fields {
-                if key == "request_id" {
-                    request_id = Some(value.clone());
-                } else if key == "data" {
-                    data_str = Some(value.clone());
-                }
-            }
-            
-            let request_id = request_id.ok_or_else(|| "Missing request_id in message".to_string())?;
-            let data_str = data_str.ok_or_else(|| "Missing data in message".to_string())?;
+async fn process_message(messages: Vec<(String, std::collections::HashMap<String, String>)>) -> Result<(), String> {
+    for (msg_id, fields) in messages {
+        let request_id = fields.get("request_id")
+            .ok_or_else(|| "Missing request_id field in message".to_string())?;
+        let data_str = fields.get("data")
+            .ok_or_else(|| "Missing data field in message".to_string())?;
 
-            let response: RedisResponse<serde_json::Value> = serde_json::from_str(&data_str)
-                .map_err(|e| format!("Failed to parse response: {}", e))?;
+        let response: RedisResponse<serde_json::Value> = serde_json::from_str(data_str)
+            .map_err(|e| format!("Failed to parse response JSON: {}", e))?;
 
-            resolve_pending_request(request_id, response);
-        }
+        info!("Processing engine response: request_id={}, status={}, msg_id={}", request_id, response.status_code, msg_id);
+        resolve_pending_request(request_id.clone(), response);
     }
     Ok(())
 }

@@ -55,42 +55,61 @@ async fn read_stream_messages(
     let streams = vec![stream];
     let ids = vec![last_id.as_str()];
     
-    let xread_result: XReadResponse<String, String, String, RedisValue> = match client
-        .xread(Some(10), None, streams, ids)
+    let raw_result: RedisValue = match client
+        .xread::<RedisValue, _, _>(Some(10), None, streams, ids)
         .await
     {
         Ok(result) => result,
         Err(e) => {
-
             let error_msg = e.to_string();
-            if error_msg.contains("Cannot convert to map") || error_msg.contains("Parse Error") {
-
-                return Ok(Vec::new());
-            }
-
+            error!("XREAD error: {}", error_msg);
             return Err(e);
         }
     };
     
-    // Convert XReadResponse to our format
     let mut result: Vec<(String, Vec<(String, HashMap<String, String>)>)> = Vec::new();
-    for (stream_name, stream_entries) in xread_result.into_iter() {
-        let mut messages: Vec<(String, HashMap<String, String>)> = Vec::new();
-        
-        for (msg_id, fields) in stream_entries {
-            let mut fields_map: HashMap<String, String> = HashMap::new();
-            
-            for (key, value) in fields {
-                let key_str = key.to_string();
-                let value_str = value.as_str().map(|s| s.to_string()).unwrap_or_else(|| "".to_string());
-                fields_map.insert(key_str, value_str);
+    
+    if let RedisValue::Array(streams_array) = raw_result {
+        for stream_entry in streams_array {
+            if let RedisValue::Array(stream_data) = stream_entry {
+                if stream_data.len() >= 2 {
+                    let stream_name = stream_data[0].as_str().map(|s| s.to_string()).unwrap_or_else(|| String::new());
+                    
+                    if let RedisValue::Array(messages) = &stream_data[1] {
+                        let mut stream_messages: Vec<(String, HashMap<String, String>)> = Vec::new();
+                        
+                        for message in messages {
+                            if let RedisValue::Array(msg_data) = message {
+                                if msg_data.len() >= 2 {
+                                    let msg_id = msg_data[0].as_str().map(|s| s.to_string()).unwrap_or_else(|| String::new());
+                                    
+                                    if let RedisValue::Array(fields_array) = &msg_data[1] {
+                                        let mut fields_map = HashMap::new();
+                                        
+                                        for i in (0..fields_array.len()).step_by(2) {
+                                            if i + 1 < fields_array.len() {
+                                                let key = fields_array[i].as_str().map(|s| s.to_string()).unwrap_or_else(|| String::new());
+                                                let value = fields_array[i + 1].as_str().map(|s| s.to_string()).unwrap_or_else(|| String::new());
+                                                fields_map.insert(key, value);
+                                            }
+                                        }
+                                        
+                                        if !msg_id.is_empty() && msg_id > *last_id {
+                                            *last_id = msg_id.clone();
+                                        }
+                                        
+                                        stream_messages.push((msg_id, fields_map));
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if !stream_messages.is_empty() {
+                            result.push((stream_name, stream_messages));
+                        }
+                    }
+                }
             }
-            
-            messages.push((msg_id, fields_map));
-        }
-        
-        if !messages.is_empty() {
-            result.push((stream_name, messages));
         }
     }
     
@@ -100,10 +119,7 @@ async fn read_stream_messages(
         let mut messages = Vec::new();
         for (msg_id, fields_map) in messages_vec {
             let fields: Vec<(String, String)> = fields_map.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
-            messages.push((msg_id.clone(), fields));
-            if msg_id > *last_id {
-                *last_id = msg_id;
-            }
+            messages.push((msg_id, fields));
         }
         if !messages.is_empty() {
             formatted_result.push((stream_name, messages));

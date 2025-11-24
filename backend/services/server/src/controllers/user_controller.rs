@@ -136,7 +136,7 @@ pub async fn signin_user(req: web::Json<LoginUserInput>) -> impl Responder {
         }
     };
 
-    let user_id = match user_response.data["id"].as_i64() {
+    let user_id_i64 = match user_response.data["id"].as_i64() {
         Some(id) => id,
         None => {
             return HttpResponse::InternalServerError().json(json!({
@@ -145,6 +145,14 @@ pub async fn signin_user(req: web::Json<LoginUserInput>) -> impl Responder {
             }));
         }
     };
+    
+    let user_id_u64 = if user_id_i64 < 0 {
+        user_id_i64 as u64
+    } else {
+        user_id_i64 as u64
+    };
+    
+    let user_id = user_id_u64 as i64;
 
     let user_password = match user_response.data["password"].as_str() {
         Some(pwd) => pwd,
@@ -185,7 +193,7 @@ pub async fn signin_user(req: web::Json<LoginUserInput>) -> impl Responder {
         "get-balance",
         "Get user balance from engine",
         json!({
-            "user_id": user_id as u64,
+            "user_id": user_id_u64,
         }),
     );
 
@@ -205,7 +213,7 @@ pub async fn signin_user(req: web::Json<LoginUserInput>) -> impl Responder {
         "message":"Sign in successfully",
         "token": token,
         "user":{
-            "id": user_id,
+            "id": user_id_u64,
             "email": user_email,
             "name": user_name,
             "balance": balance
