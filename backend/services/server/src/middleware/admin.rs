@@ -1,16 +1,16 @@
+use crate::utils::redis_stream::send_request_and_wait;
 use actix_web::{
     dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform},
     error::ErrorUnauthorized,
     Error, HttpMessage,
 };
 use futures_util::future::LocalBoxFuture;
+use redis_client::RedisRequest;
 use serde_json::json;
 use std::{
     future::{ready, Ready},
     rc::Rc,
 };
-use crate::utils::redis_stream::send_request_and_wait;
-use redis_client::RedisRequest;
 use uuid::Uuid;
 
 pub struct AdminMiddleware;
@@ -86,12 +86,10 @@ where
                     let res = service.call(req).await?;
                     Ok(res)
                 }
-                Err(_) => {
-                    Err(ErrorUnauthorized(json!({
-                        "status": "error",
-                        "message": "Failed to verify admin status"
-                    })))
-                }
+                Err(_) => Err(ErrorUnauthorized(json!({
+                    "status": "error",
+                    "message": "Failed to verify admin status"
+                }))),
             }
         })
     }

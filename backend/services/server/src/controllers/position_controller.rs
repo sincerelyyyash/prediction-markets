@@ -1,6 +1,6 @@
-use actix_web::{get, web, HttpRequest, HttpResponse, Responder};
 use crate::utils::jwt::extract_user_id;
 use crate::utils::redis_stream::send_request_and_wait;
+use actix_web::{get, web, HttpRequest, HttpResponse, Responder};
 use redis_client::RedisRequest;
 use serde_json::json;
 use uuid::Uuid;
@@ -42,13 +42,11 @@ pub async fn get_positions(req: HttpRequest) -> impl Responder {
             }
             HttpResponse::Ok().json(response.data)
         }
-        Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to fetch positions",
-                "error": e
-            }))
-        }
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Failed to fetch positions",
+            "error": e
+        })),
     }
 }
 
@@ -89,20 +87,18 @@ pub async fn get_positions_history(req: HttpRequest) -> impl Responder {
             }
             HttpResponse::Ok().json(response.data)
         }
-        Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to fetch positions history",
-                "error": e
-            }))
-        }
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Failed to fetch positions history",
+            "error": e
+        })),
     }
 }
 
 #[get("/positions/{market_id}")]
 pub async fn get_position_by_market(req: HttpRequest, path: web::Path<u64>) -> impl Responder {
     let market_id = path.into_inner();
-    
+
     let user_id = match extract_user_id(&req) {
         Ok(id) => id,
         Err(resp) => return resp,
@@ -139,13 +135,11 @@ pub async fn get_position_by_market(req: HttpRequest, path: web::Path<u64>) -> i
             }
             HttpResponse::Ok().json(response.data)
         }
-        Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to fetch position",
-                "error": e
-            }))
-        }
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Failed to fetch position",
+            "error": e
+        })),
     }
 }
 
@@ -195,13 +189,10 @@ pub async fn get_portfolio(req: HttpRequest) -> impl Responder {
                 "data": response.data
             }))
         }
-        Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to fetch portfolio",
-                "error": e
-            }))
-        }
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Failed to fetch portfolio",
+            "error": e
+        })),
     }
 }
-

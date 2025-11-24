@@ -1,6 +1,6 @@
-use actix_web::{get, web, HttpRequest, HttpResponse, Responder};
 use crate::utils::jwt::extract_user_id;
 use crate::utils::redis_stream::send_request_and_wait;
+use actix_web::{get, web, HttpRequest, HttpResponse, Responder};
 use redis_client::RedisRequest;
 use serde_json::json;
 use uuid::Uuid;
@@ -42,13 +42,11 @@ pub async fn get_trades(req: HttpRequest) -> impl Responder {
             }
             HttpResponse::Ok().json(response.data)
         }
-        Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to fetch trades",
-                "error": e
-            }))
-        }
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Failed to fetch trades",
+            "error": e
+        })),
     }
 }
 
@@ -86,13 +84,11 @@ pub async fn get_trade_by_id(req: HttpRequest, path: web::Path<String>) -> impl 
             }
             HttpResponse::Ok().json(response.data)
         }
-        Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to fetch trade",
-                "error": e
-            }))
-        }
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Failed to fetch trade",
+            "error": e
+        })),
     }
 }
 
@@ -123,13 +119,11 @@ pub async fn get_trades_by_market(req: HttpRequest, path: web::Path<u64>) -> imp
             }
             HttpResponse::Ok().json(response.data)
         }
-        Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to fetch trades",
-                "error": e
-            }))
-        }
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Failed to fetch trades",
+            "error": e
+        })),
     }
 }
 
@@ -172,13 +166,10 @@ pub async fn get_trades_by_user_id(req: HttpRequest, path: web::Path<u64>) -> im
             }
             HttpResponse::Ok().json(response.data)
         }
-        Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to fetch trades",
-                "error": e
-            }))
-        }
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Failed to fetch trades",
+            "error": e
+        })),
     }
 }
-

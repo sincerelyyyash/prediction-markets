@@ -1,6 +1,6 @@
-use redis_client::RedisManager;
 use engine::types::db_event_types::DbEvent;
 use log::{error, warn};
+use redis_client::RedisManager;
 use serde_json;
 
 const DB_EVENTS_STREAM: &str = "db_events";
@@ -33,4 +33,3 @@ pub async fn publish_db_event(event: DbEvent) -> Result<(), String> {
         }
     }
 }
-

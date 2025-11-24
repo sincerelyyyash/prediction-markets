@@ -1,11 +1,14 @@
-use actix_web::{get, post, put, web, HttpRequest, HttpResponse, Responder};
-use crate::types::order_types::{PlaceOrderInput, ModifyOrderInput, OrderSideInput, OrderTypeInput, SplitOrderInput, MergeOrderInput};
+use crate::types::order_types::{
+    MergeOrderInput, ModifyOrderInput, OrderSideInput, OrderTypeInput, PlaceOrderInput,
+    SplitOrderInput,
+};
 use crate::utils::jwt::extract_user_id;
 use crate::utils::redis_stream::send_request_and_wait;
+use actix_web::{get, post, put, web, HttpRequest, HttpResponse, Responder};
 use redis_client::RedisRequest;
 use serde_json::json;
-use validator::Validate;
 use uuid::Uuid;
+use validator::Validate;
 
 #[post("/orders")]
 pub async fn place_order(req: HttpRequest, body: web::Json<PlaceOrderInput>) -> impl Responder {
@@ -49,12 +52,8 @@ pub async fn place_order(req: HttpRequest, body: web::Json<PlaceOrderInput>) -> 
     });
 
     let request_id = Uuid::new_v4().to_string();
-    let redis_request = RedisRequest::new(
-        "engine",
-        "place-order",
-        "Place order request",
-        order_data,
-    );
+    let redis_request =
+        RedisRequest::new("engine", "place-order", "Place order request", order_data);
 
     match send_request_and_wait(request_id, redis_request, 10).await {
         Ok(response) => {
@@ -73,20 +72,18 @@ pub async fn place_order(req: HttpRequest, body: web::Json<PlaceOrderInput>) -> 
                 "data": response.data
             }))
         }
-        Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to process order",
-                "error": e
-            }))
-        }
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Failed to process order",
+            "error": e
+        })),
     }
 }
 
 #[post("/orders/{order_id}/cancel")]
 pub async fn cancel_order(req: HttpRequest, path: web::Path<u64>) -> impl Responder {
     let order_id = path.into_inner();
-    
+
     let user_id = match extract_user_id(&req) {
         Ok(id) => id,
         Err(resp) => return resp,
@@ -98,12 +95,8 @@ pub async fn cancel_order(req: HttpRequest, path: web::Path<u64>) -> impl Respon
     });
 
     let request_id = Uuid::new_v4().to_string();
-    let redis_request = RedisRequest::new(
-        "engine",
-        "cancel-order",
-        "Cancel order request",
-        order_data,
-    );
+    let redis_request =
+        RedisRequest::new("engine", "cancel-order", "Cancel order request", order_data);
 
     match send_request_and_wait(request_id, redis_request, 10).await {
         Ok(response) => {
@@ -122,18 +115,20 @@ pub async fn cancel_order(req: HttpRequest, path: web::Path<u64>) -> impl Respon
                 "data": response.data
             }))
         }
-        Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to cancel order",
-                "error": e
-            }))
-        }
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Failed to cancel order",
+            "error": e
+        })),
     }
 }
 
 #[put("/orders/{order_id}")]
-pub async fn modify_order(req: HttpRequest, path: web::Path<u64>, body: web::Json<ModifyOrderInput>) -> impl Responder {
+pub async fn modify_order(
+    req: HttpRequest,
+    path: web::Path<u64>,
+    body: web::Json<ModifyOrderInput>,
+) -> impl Responder {
     if let Err(e) = body.validate() {
         return HttpResponse::BadRequest().json(json!({
             "status": "error",
@@ -142,7 +137,7 @@ pub async fn modify_order(req: HttpRequest, path: web::Path<u64>, body: web::Jso
     }
 
     let order_id = path.into_inner();
-    
+
     let user_id = match extract_user_id(&req) {
         Ok(id) => id,
         Err(resp) => return resp,
@@ -162,12 +157,8 @@ pub async fn modify_order(req: HttpRequest, path: web::Path<u64>, body: web::Jso
     }
 
     let request_id = Uuid::new_v4().to_string();
-    let redis_request = RedisRequest::new(
-        "engine",
-        "modify-order",
-        "Modify order request",
-        order_data,
-    );
+    let redis_request =
+        RedisRequest::new("engine", "modify-order", "Modify order request", order_data);
 
     match send_request_and_wait(request_id, redis_request, 10).await {
         Ok(response) => {
@@ -186,13 +177,11 @@ pub async fn modify_order(req: HttpRequest, path: web::Path<u64>, body: web::Jso
                 "data": response.data
             }))
         }
-        Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to modify order",
-                "error": e
-            }))
-        }
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Failed to modify order",
+            "error": e
+        })),
     }
 }
 
@@ -218,12 +207,8 @@ pub async fn split_order(req: HttpRequest, body: web::Json<SplitOrderInput>) -> 
     });
 
     let request_id = Uuid::new_v4().to_string();
-    let redis_request = RedisRequest::new(
-        "engine",
-        "split-order",
-        "Split order request",
-        order_data,
-    );
+    let redis_request =
+        RedisRequest::new("engine", "split-order", "Split order request", order_data);
 
     match send_request_and_wait(request_id, redis_request, 10).await {
         Ok(response) => {
@@ -242,13 +227,11 @@ pub async fn split_order(req: HttpRequest, body: web::Json<SplitOrderInput>) -> 
                 "data": response.data
             }))
         }
-        Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to process split order",
-                "error": e
-            }))
-        }
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Failed to process split order",
+            "error": e
+        })),
     }
 }
 
@@ -273,12 +256,8 @@ pub async fn merge_order(req: HttpRequest, body: web::Json<MergeOrderInput>) -> 
     });
 
     let request_id = Uuid::new_v4().to_string();
-    let redis_request = RedisRequest::new(
-        "engine",
-        "merge-order",
-        "Merge order request",
-        order_data,
-    );
+    let redis_request =
+        RedisRequest::new("engine", "merge-order", "Merge order request", order_data);
 
     match send_request_and_wait(request_id, redis_request, 10).await {
         Ok(response) => {
@@ -297,13 +276,11 @@ pub async fn merge_order(req: HttpRequest, body: web::Json<MergeOrderInput>) -> 
                 "data": response.data
             }))
         }
-        Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to process merge order",
-                "error": e
-            }))
-        }
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Failed to process merge order",
+            "error": e
+        })),
     }
 }
 
@@ -343,20 +320,18 @@ pub async fn get_open_orders(req: HttpRequest) -> impl Responder {
                 "data": response.data
             }))
         }
-        Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to fetch open orders",
-                "error": e
-            }))
-        }
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Failed to fetch open orders",
+            "error": e
+        })),
     }
 }
 
 #[get("/orders/{order_id}")]
 pub async fn get_order_status(req: HttpRequest, path: web::Path<u64>) -> impl Responder {
     let order_id = path.into_inner();
-    
+
     let user_id = match extract_user_id(&req) {
         Ok(id) => id,
         Err(resp) => return resp,
@@ -402,13 +377,11 @@ pub async fn get_order_status(req: HttpRequest, path: web::Path<u64>) -> impl Re
             }
             HttpResponse::Ok().json(response.data)
         }
-        Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to fetch order",
-                "error": e
-            }))
-        }
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Failed to fetch order",
+            "error": e
+        })),
     }
 }
 
@@ -444,13 +417,11 @@ pub async fn get_order_history(req: HttpRequest) -> impl Responder {
             }
             HttpResponse::Ok().json(response.data)
         }
-        Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to fetch order history",
-                "error": e
-            }))
-        }
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Failed to fetch order history",
+            "error": e
+        })),
     }
 }
 
@@ -481,13 +452,11 @@ pub async fn get_orders_by_user(req: HttpRequest, path: web::Path<u64>) -> impl 
             }
             HttpResponse::Ok().json(response.data)
         }
-        Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to fetch orders",
-                "error": e
-            }))
-        }
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Failed to fetch orders",
+            "error": e
+        })),
     }
 }
 
@@ -518,12 +487,10 @@ pub async fn get_orders_by_market(req: HttpRequest, path: web::Path<u64>) -> imp
             }
             HttpResponse::Ok().json(response.data)
         }
-        Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to fetch orders",
-                "error": e
-            }))
-        }
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Failed to fetch orders",
+            "error": e
+        })),
     }
 }

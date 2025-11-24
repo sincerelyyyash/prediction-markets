@@ -1,21 +1,21 @@
-use actix_web::{post, web, HttpResponse, Responder};
-use crate::types::auth_types::{LoginUserInput};
-use crate::utils::jwt::{create_jwt};
+use crate::types::auth_types::LoginUserInput;
+use crate::utils::jwt::create_jwt;
 use crate::utils::redis_stream::send_request_and_wait;
+use actix_web::{post, web, HttpResponse, Responder};
+use bcrypt::verify;
 use redis_client::RedisRequest;
-use bcrypt::{verify};
 use serde_json::json;
-use validator::Validate;
-use uuid::Uuid;
 use std::env;
+use uuid::Uuid;
+use validator::Validate;
 
-#[post ("admin/signin")]
+#[post("admin/signin")]
 pub async fn signin_admin(req: web::Json<LoginUserInput>) -> impl Responder {
-    if let Err(e) = req.validate(){
+    if let Err(e) = req.validate() {
         return HttpResponse::BadRequest().json(json!({
             "status": "error",
             "message": e.to_string()
-        }))
+        }));
     }
 
     let request_id = Uuid::new_v4().to_string();
@@ -82,7 +82,7 @@ pub async fn signin_admin(req: web::Json<LoginUserInput>) -> impl Responder {
     }
 
     let jwt_token = env::var("JWT_SECRET").expect("JWT_SECRET must be present");
-    let token = match create_jwt(&admin_id, &jwt_token){
+    let token = match create_jwt(&admin_id, &jwt_token) {
         Ok(t) => t,
         Err(_) => {
             return HttpResponse::InternalServerError().json(json!({

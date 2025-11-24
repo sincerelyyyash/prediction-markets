@@ -1,12 +1,13 @@
+use redis_client::{RedisManager, RedisRequest, RedisResponse};
+use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{oneshot, Mutex};
-use redis_client::{RedisManager, RedisRequest, RedisResponse};
-use serde::Serialize;
 
-type PendingRequests = Arc<Mutex<HashMap<String, oneshot::Sender<RedisResponse<serde_json::Value>>>>>;
+type PendingRequests =
+    Arc<Mutex<HashMap<String, oneshot::Sender<RedisResponse<serde_json::Value>>>>>;
 
-static PENDING_REQUESTS: once_cell::sync::Lazy<PendingRequests> = 
+static PENDING_REQUESTS: once_cell::sync::Lazy<PendingRequests> =
     once_cell::sync::Lazy::new(|| Arc::new(Mutex::new(HashMap::new())));
 
 pub async fn send_request_and_wait<T>(
@@ -18,14 +19,14 @@ where
     T: Serialize + serde::de::DeserializeOwned + Send + Sync + Clone,
 {
     let (tx, rx) = oneshot::channel();
-    
+
     {
         let mut pending = PENDING_REQUESTS.lock().await;
         pending.insert(request_id.clone(), tx);
     }
 
-    let redis_manager = RedisManager::global()
-        .ok_or_else(|| "Redis manager not initialized".to_string())?;
+    let redis_manager =
+        RedisManager::global().ok_or_else(|| "Redis manager not initialized".to_string())?;
 
     let request_json = serde_json::to_string(&request)
         .map_err(|e| format!("Failed to serialize request: {}", e))?;
@@ -41,10 +42,7 @@ where
     redis_manager
         .stream_add(
             stream_name,
-            &[
-                ("request_id", &request_id),
-                ("data", &request_json),
-            ],
+            &[("request_id", &request_id), ("data", &request_json)],
         )
         .await
         .map_err(|e| format!("Failed to send request to stream: {}", e))?;
@@ -72,4 +70,3 @@ pub fn resolve_pending_request(request_id: String, response: RedisResponse<serde
         }
     });
 }
-

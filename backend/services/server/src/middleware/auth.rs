@@ -1,16 +1,16 @@
+use crate::utils::jwt::verify_jwt;
 use actix_web::{
     dev::{forward_ready, Service, ServiceRequest, ServiceResponse, Transform},
-    error::{ErrorUnauthorized, ErrorInternalServerError},
+    error::{ErrorInternalServerError, ErrorUnauthorized},
     Error, HttpMessage, HttpResponse,
 };
 use futures_util::future::LocalBoxFuture;
 use serde_json::json;
+use std::env;
 use std::{
     future::{ready, Ready},
     rc::Rc,
 };
-use crate::utils::jwt::verify_jwt;
-use std::env;
 
 pub struct AuthMiddleware;
 
@@ -121,4 +121,3 @@ where
         })
     }
 }
-

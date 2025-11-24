@@ -1,10 +1,10 @@
-use actix_web::{get, web, HttpResponse, Responder};
 use crate::types::event_types::EventSearchQueryRequest;
 use crate::utils::redis_stream::send_request_and_wait;
+use actix_web::{get, web, HttpResponse, Responder};
+use log::warn;
 use redis_client::{RedisManager, RedisRequest};
 use serde_json::json;
 use uuid::Uuid;
-use log::warn;
 
 #[get("/events")]
 pub async fn get_all_events() -> impl Responder {
@@ -27,12 +27,8 @@ pub async fn get_all_events() -> impl Responder {
     }
 
     let request_id = Uuid::new_v4().to_string();
-    let read_request = RedisRequest::new(
-        "db_worker",
-        "get_all_events",
-        "Get all events",
-        json!({}),
-    );
+    let read_request =
+        RedisRequest::new("db_worker", "get_all_events", "Get all events", json!({}));
 
     match send_request_and_wait(request_id, read_request, 10).await {
         Ok(response) => {
@@ -47,13 +43,11 @@ pub async fn get_all_events() -> impl Responder {
             }
             HttpResponse::Ok().json(response.data)
         }
-        Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to fetch events",
-                "error": e
-            }))
-        }
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Failed to fetch events",
+            "error": e
+        })),
     }
 }
 
@@ -108,16 +102,13 @@ pub async fn get_event_by_id(path: web::Path<u64>) -> impl Responder {
             }
             HttpResponse::Ok().json(response.data)
         }
-        Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to fetch event",
-                "error": e
-            }))
-        }
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Failed to fetch event",
+            "error": e
+        })),
     }
 }
-
 
 #[get("/events/search")]
 pub async fn search_events(query: web::Query<EventSearchQueryRequest>) -> impl Responder {
@@ -169,12 +160,10 @@ pub async fn search_events(query: web::Query<EventSearchQueryRequest>) -> impl R
             }
             HttpResponse::Ok().json(response.data)
         }
-        Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to search events",
-                "error": e
-            }))
-        }
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Failed to search events",
+            "error": e
+        })),
     }
 }

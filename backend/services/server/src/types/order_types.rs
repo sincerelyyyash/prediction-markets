@@ -23,7 +23,6 @@ fn default_order_type() -> OrderTypeInput {
     OrderTypeInput::Limit
 }
 
-
 #[derive(Deserialize, Validate, Debug)]
 pub struct SplitOrderInput {
     #[validate(range(min = 1, message = "Market 1 ID must be greater than 0"))]
@@ -84,4 +83,3 @@ pub enum OrderSideResponse {
 pub struct OrderHistoryResponse {
     pub orders: Vec<OrderResponse>,
 }
-

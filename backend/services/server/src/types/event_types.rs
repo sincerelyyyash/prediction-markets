@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use validator::Validate;
 
 #[derive(Serialize, Deserialize, Validate, Debug)]
@@ -10,7 +10,7 @@ pub struct CreateEventRequest {
     pub category: String,
     pub resolved_at: Option<String>,
     pub created_by: u64,
-    pub outcomes: Vec<CreateOutcomeInput>
+    pub outcomes: Vec<CreateOutcomeInput>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -20,7 +20,7 @@ pub struct CreateOutcomeInput {
     pub status: String,
 }
 
-#[derive (Serialize, Deserialize, Validate, Debug)]
+#[derive(Serialize, Deserialize, Validate, Debug)]
 pub struct ResolveEventRequest {
     pub event_id: u64,
     pub status: String,
@@ -28,7 +28,7 @@ pub struct ResolveEventRequest {
     pub winning_outcome_id: u64,
 }
 
-#[derive (Serialize, Deserialize, Validate, Debug)]
+#[derive(Serialize, Deserialize, Validate, Debug)]
 pub struct UpdateEventRequest {
     pub event_id: u64,
     pub slug: Option<String>,

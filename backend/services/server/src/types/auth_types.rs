@@ -1,17 +1,15 @@
 use serde::Deserialize;
 use validator::Validate;
 
-
-
 #[derive(Deserialize, Validate, Debug)]
 pub struct SignUpUserInput {
     #[validate(email(message = "Invalid email format"))]
     pub email: String,
 
-    #[validate(length(min=2, message= "Name must be atleast 2 characters"))]
+    #[validate(length(min = 2, message = "Name must be atleast 2 characters"))]
     pub name: String,
 
-    #[validate(length(min=8, message= "Password must be atleast 8 characters"))]
+    #[validate(length(min = 8, message = "Password must be atleast 8 characters"))]
     pub password: String,
 }
 
@@ -20,7 +18,7 @@ pub struct LoginUserInput {
     #[validate(email(message = "Invalid email format"))]
     pub email: String,
 
-    #[validate(length(min=8, message= "Password must be atleast 8 characters long"))]
+    #[validate(length(min = 8, message = "Password must be atleast 8 characters long"))]
     pub password: String,
 }
 
@@ -35,5 +33,4 @@ pub struct SplitSchema {
 pub struct MergeSchema {
     pub id: u64,
     pub market_id: u64,
-
 }

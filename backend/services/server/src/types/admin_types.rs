@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Admin {
     pub id: u64,
@@ -6,4 +6,3 @@ pub struct Admin {
     pub name: String,
     pub password: String,
 }
-

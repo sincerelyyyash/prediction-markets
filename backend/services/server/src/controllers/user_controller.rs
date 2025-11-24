@@ -1,20 +1,20 @@
-use actix_web::{get, post, web, HttpRequest, HttpResponse, Responder};
-use crate::types::auth_types::{SignUpUserInput, LoginUserInput};
+use crate::services::db_event_publisher::publish_db_event;
+use crate::types::auth_types::{LoginUserInput, SignUpUserInput};
 use crate::utils::jwt::{create_jwt, extract_user_id};
 use crate::utils::redis_stream::send_request_and_wait;
-use crate::services::db_event_publisher::publish_db_event;
-use redis_client::RedisRequest;
-use engine::types::db_event_types::{DbEvent, UserCreatedEvent};
-use bcrypt::{hash, DEFAULT_COST, verify};
-use serde_json::json;
-use validator::Validate;
-use uuid::Uuid;
+use actix_web::{get, post, web, HttpRequest, HttpResponse, Responder};
+use bcrypt::{hash, verify, DEFAULT_COST};
 use chrono::Utc;
+use engine::types::db_event_types::{DbEvent, UserCreatedEvent};
+use redis_client::RedisRequest;
+use serde_json::json;
 use std::env;
+use uuid::Uuid;
+use validator::Validate;
 
 #[post("/user/signup")]
 pub async fn signup_user(req: web::Json<SignUpUserInput>) -> impl Responder {
-    if let Err(e) = req.validate(){
+    if let Err(e) = req.validate() {
         return HttpResponse::BadRequest().json(json!({
             "status":"error",
             "message": e.to_string()
@@ -58,12 +58,8 @@ pub async fn signup_user(req: web::Json<SignUpUserInput>) -> impl Responder {
     });
 
     let request_id = Uuid::new_v4().to_string();
-    let redis_request = RedisRequest::new(
-        "engine",
-        "create-user",
-        "Create user in engine",
-        user_data,
-    );
+    let redis_request =
+        RedisRequest::new("engine", "create-user", "Create user in engine", user_data);
 
     match send_request_and_wait(request_id, redis_request, 10).await {
         Ok(response) => {
@@ -88,17 +84,17 @@ pub async fn signup_user(req: web::Json<SignUpUserInput>) -> impl Responder {
     HttpResponse::Ok().json(json!({
         "status":"success",
         "message":"User registered Succesfully",
-        "user_id": user_id 
+        "user_id": user_id
     }))
 }
 
 #[post("/user/signin")]
 pub async fn signin_user(req: web::Json<LoginUserInput>) -> impl Responder {
-    if let Err(e) = req.validate(){
+    if let Err(e) = req.validate() {
         return HttpResponse::BadRequest().json(json!({
             "status":"error",
             "message": e.to_string()
-        }))
+        }));
     }
 
     let request_id = Uuid::new_v4().to_string();
@@ -145,13 +141,13 @@ pub async fn signin_user(req: web::Json<LoginUserInput>) -> impl Responder {
             }));
         }
     };
-    
+
     let user_id_u64 = if user_id_i64 < 0 {
         user_id_i64 as u64
     } else {
         user_id_i64 as u64
     };
-    
+
     let user_id = user_id_u64 as i64;
 
     let user_password = match user_response.data["password"].as_str() {
@@ -165,8 +161,14 @@ pub async fn signin_user(req: web::Json<LoginUserInput>) -> impl Responder {
     };
 
     let user_balance = user_response.data["balance"].as_i64().unwrap_or(0);
-    let user_email = user_response.data["email"].as_str().unwrap_or("").to_string();
-    let user_name = user_response.data["name"].as_str().unwrap_or("").to_string();
+    let user_email = user_response.data["email"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
+    let user_name = user_response.data["name"]
+        .as_str()
+        .unwrap_or("")
+        .to_string();
 
     let is_valid = verify(&req.password, user_password).unwrap_or(false);
     if !is_valid {
@@ -177,7 +179,7 @@ pub async fn signin_user(req: web::Json<LoginUserInput>) -> impl Responder {
     }
 
     let jwt_token = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
-    let token = match create_jwt(&user_id, &jwt_token){
+    let token = match create_jwt(&user_id, &jwt_token) {
         Ok(t) => t,
         Err(_) => {
             return HttpResponse::InternalServerError().json(json!({
@@ -202,7 +204,11 @@ pub async fn signin_user(req: web::Json<LoginUserInput>) -> impl Responder {
             if response.status_code >= 400 {
                 user_balance
             } else {
-                response.data.get("balance").and_then(|v| v.as_i64()).unwrap_or(user_balance)
+                response
+                    .data
+                    .get("balance")
+                    .and_then(|v| v.as_i64())
+                    .unwrap_or(user_balance)
             }
         }
         Err(_) => user_balance,
@@ -267,13 +273,11 @@ pub async fn get_balance(req: HttpRequest) -> impl Responder {
                 "balance": response.data.get("balance").and_then(|v| v.as_i64()).unwrap_or(0)
             }))
         }
-        Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to get balance",
-                "error": e
-            }))
-        }
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Failed to get balance",
+            "error": e
+        })),
     }
 }
 
@@ -284,11 +288,12 @@ pub async fn onramp(req: HttpRequest, body: web::Json<serde_json::Value>) -> imp
         Err(resp) => return resp,
     };
 
-    let amount = body["amount"].as_i64()
-        .ok_or_else(|| HttpResponse::BadRequest().json(json!({
+    let amount = body["amount"].as_i64().ok_or_else(|| {
+        HttpResponse::BadRequest().json(json!({
             "status": "error",
             "message": "Missing or invalid amount"
-        })));
+        }))
+    });
 
     let amount = match amount {
         Ok(a) => a,
@@ -342,12 +347,10 @@ pub async fn onramp(req: HttpRequest, body: web::Json<serde_json::Value>) -> imp
                 "data": response.data
             }))
         }
-        Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to add balance",
-                "error": e
-            }))
-        }
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Failed to add balance",
+            "error": e
+        })),
     }
 }
