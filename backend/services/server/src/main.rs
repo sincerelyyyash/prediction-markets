@@ -1,53 +1,61 @@
 mod controllers;
+mod middleware;
+mod services;
 mod types;
 mod utils;
-mod services;
-mod middleware;
 
-use actix_web::{App, HttpResponse, HttpServer, Responder, web};
-use std::env;
+use crate::controllers::admin_auth_controller::signin_admin;
+use crate::controllers::admin_event_controller::{
+    create_event, delete_event, resolve_event, update_event,
+};
+use crate::controllers::order_controller::{
+    cancel_order, get_open_orders, get_order_history, get_order_status, get_orders_by_market,
+    get_orders_by_user, merge_order, modify_order, place_order, split_order,
+};
+use crate::controllers::position_controller::{
+    get_portfolio, get_position_by_market, get_positions, get_positions_history,
+};
+use crate::controllers::trade_controller::{
+    get_trade_by_id, get_trades, get_trades_by_market, get_trades_by_user_id,
+};
+use crate::controllers::user_controller::{get_balance, onramp, signin_user, signup_user};
+use crate::controllers::user_event_controller::{get_all_events, get_event_by_id, search_events};
+use crate::controllers::user_profile_controller::{get_all_users, get_user_by_id};
+use crate::middleware::admin::AdminMiddleware;
+use crate::middleware::auth::AuthMiddleware;
+use crate::services::db_read_response_consumer::start_db_read_response_consumer;
+use crate::services::response_consumer::start_response_consumer;
+use actix_web::{web, App, HttpResponse, HttpServer, Responder};
 use dotenvy::dotenv;
 use redis_client::RedisManager;
-use crate::controllers::user_controller::{signup_user, signin_user, get_balance, onramp};
-use crate::controllers::admin_auth_controller::{signin_admin};
-use crate::controllers::admin_event_controller::{create_event,resolve_event, update_event, delete_event};
-use crate::controllers::user_event_controller::{get_all_events, get_event_by_id, search_events};
-use crate::controllers::order_controller::{place_order, cancel_order, modify_order, split_order, merge_order, get_open_orders, get_order_status, get_order_history, get_orders_by_user, get_orders_by_market};
-use crate::controllers::position_controller::{get_positions, get_position_by_market, get_portfolio, get_positions_history};
-use crate::controllers::trade_controller::{get_trades, get_trade_by_id, get_trades_by_market, get_trades_by_user_id};
-use crate::controllers::user_profile_controller::{get_user_by_id, get_all_users};
-use crate::services::response_consumer::start_response_consumer;
-use crate::services::db_read_response_consumer::start_db_read_response_consumer;
-use crate::middleware::auth::AuthMiddleware;
-use crate::middleware::admin::AdminMiddleware;
+use std::env;
 
-
-async fn health()-> impl Responder {
+async fn health() -> impl Responder {
     HttpResponse::Ok()
-    .content_type("application/json")
-    .body(r#"{"status": "Ok"}"#)
+        .content_type("application/json")
+        .body(r#"{"status": "Ok"}"#)
 }
 
-async fn run()-> std::io::Result<()> {
-
+async fn run() -> std::io::Result<()> {
     dotenv().ok();
     env_logger::init();
 
-    let redis_url = env::var("REDIS_URL")
-        .unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
-    
-    let _redis_manager = RedisManager::init_global(&redis_url)
-        .expect("Failed to initialize Redis manager");
-    
-    _redis_manager.connect().await
+    let redis_url = env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
+
+    let _redis_manager =
+        RedisManager::init_global(&redis_url).expect("Failed to initialize Redis manager");
+
+    _redis_manager
+        .connect()
+        .await
         .expect("Failed to connect to Redis");
-    
+
     println!("Connected to Redis");
 
     start_response_consumer().await;
     start_db_read_response_consumer().await;
 
-    HttpServer::new(move|| {
+    HttpServer::new(move || {
         App::new()
             .service(signup_user)
             .service(signin_user)
@@ -80,7 +88,6 @@ async fn run()-> std::io::Result<()> {
                     .service(get_trades_by_market)
                     .service(get_trades_by_user_id)
                     .service(get_user_by_id)
-                    .service(get_all_users)
                     .service(
                         web::scope("")
                             .wrap(AdminMiddleware)
@@ -88,7 +95,8 @@ async fn run()-> std::io::Result<()> {
                             .service(update_event)
                             .service(resolve_event)
                             .service(delete_event)
-                    )
+                            .service(get_all_users),
+                    ),
             )
     })
     .bind("127.0.0.1:8000")?
@@ -96,7 +104,7 @@ async fn run()-> std::io::Result<()> {
     .await
 }
 
-fn main()-> std::io::Result<()> {
+fn main() -> std::io::Result<()> {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()

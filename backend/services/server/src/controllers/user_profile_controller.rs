@@ -1,6 +1,6 @@
-use actix_web::{get, web, HttpRequest, HttpResponse, Responder};
 use crate::utils::jwt::extract_user_id;
 use crate::utils::redis_stream::send_request_and_wait;
+use actix_web::{get, web, HttpRequest, HttpResponse, Responder};
 use redis_client::RedisRequest;
 use serde_json::json;
 use uuid::Uuid;
@@ -51,13 +51,11 @@ pub async fn get_user_by_id(req: HttpRequest, path: web::Path<u64>) -> impl Resp
             }
             HttpResponse::Ok().json(response.data)
         }
-        Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to fetch user",
-                "error": e
-            }))
-        }
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Failed to fetch user",
+            "error": e
+        })),
     }
 }
 
@@ -69,12 +67,7 @@ pub async fn get_all_users(req: HttpRequest) -> impl Responder {
     };
 
     let request_id = Uuid::new_v4().to_string();
-    let read_request = RedisRequest::new(
-        "db_worker",
-        "get_all_users",
-        "Get all users",
-        json!({}),
-    );
+    let read_request = RedisRequest::new("db_worker", "get_all_users", "Get all users", json!({}));
 
     match send_request_and_wait(request_id, read_request, 10).await {
         Ok(response) => {
@@ -89,13 +82,10 @@ pub async fn get_all_users(req: HttpRequest) -> impl Responder {
             }
             HttpResponse::Ok().json(response.data)
         }
-        Err(e) => {
-            HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "Failed to fetch users",
-                "error": e
-            }))
-        }
+        Err(e) => HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Failed to fetch users",
+            "error": e
+        })),
     }
 }
-
