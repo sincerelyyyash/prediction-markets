@@ -227,7 +227,7 @@ pub async fn signin_user(req: web::Json<LoginUserInput>) -> impl Responder {
     }))
 }
 
-#[get("/user/balance")]
+#[get("/get-balance")]
 pub async fn get_balance(req: HttpRequest) -> impl Responder {
     let user_id = match extract_user_id(&req) {
         Ok(id) => id,
@@ -281,7 +281,7 @@ pub async fn get_balance(req: HttpRequest) -> impl Responder {
     }
 }
 
-#[post("/user/onramp")]
+#[post("/onramp")]
 pub async fn onramp(req: HttpRequest, body: web::Json<serde_json::Value>) -> impl Responder {
     let user_id = match extract_user_id(&req) {
         Ok(id) => id,
