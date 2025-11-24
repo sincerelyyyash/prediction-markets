@@ -4,9 +4,9 @@ use crate::store::orderbook::Orderbook;
 use crate::types::orderbook_types::Order;
 use crate::types::user_types::User;
 use crate::types::request_types::*;
+use crate::types::market_types::MarketMeta;
 use log::{error, info, warn};
 use fred::prelude::*;
-use fred::types::XReadResponse;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 
@@ -169,6 +169,8 @@ async fn process_message(
                 "get-portfolio" => handle_get_portfolio(request.data, orderbook).await,
                 "split-order" => handle_split_order(request.data, orderbook).await,
                 "merge-order" => handle_merge_order(request.data, orderbook).await,
+                "init-event-markets" => handle_init_event_markets(request.data, orderbook).await,
+                "close-event-markets" => handle_close_event_markets(request.data, orderbook).await,
                 _ => {
                     warn!("Unknown action: {}", request.action);
                     Ok(RedisResponse::new(
@@ -684,6 +686,63 @@ async fn handle_merge_order(data: Value, orderbook: &Orderbook) -> Result<RedisR
                 400,
                 false,
                 format!("Failed to execute merge order: {}", e),
+                serde_json::json!(null),
+            ))
+        }
+    }
+}
+
+async fn handle_init_event_markets(data: Value, orderbook: &Orderbook) -> Result<RedisResponse<Value>, String> {
+    let req: InitEventMarketsRequest = serde_json::from_value(data)
+        .map_err(|e| format!("Invalid request data: {}", e))?;
+
+    let metas: Vec<MarketMeta> = req.outcomes.into_iter().map(|outcome| {
+        MarketMeta {
+            event_id: req.event_id,
+            outcome_id: outcome.outcome_id,
+            yes_market_id: outcome.yes_market_id,
+            no_market_id: outcome.no_market_id,
+        }
+    }).collect();
+
+    match orderbook.init_markets(metas).await {
+        Ok(_) => {
+            Ok(RedisResponse::new(
+                200,
+                true,
+                "Markets initialized successfully",
+                serde_json::json!({ "event_id": req.event_id }),
+            ))
+        }
+        Err(e) => {
+            Ok(RedisResponse::new(
+                400,
+                false,
+                format!("Failed to init markets: {}", e),
+                serde_json::json!(null),
+            ))
+        }
+    }
+}
+
+async fn handle_close_event_markets(data: Value, orderbook: &Orderbook) -> Result<RedisResponse<Value>, String> {
+    let req: CloseEventMarketsRequest = serde_json::from_value(data)
+        .map_err(|e| format!("Invalid request data: {}", e))?;
+
+    match orderbook.close_event_markets(req.event_id, req.winning_outcome_id).await {
+        Ok(_) => {
+            Ok(RedisResponse::new(
+                200,
+                true,
+                "Event markets closed successfully",
+                serde_json::json!({ "event_id": req.event_id, "winning_outcome_id": req.winning_outcome_id }),
+            ))
+        }
+        Err(e) => {
+            Ok(RedisResponse::new(
+                400,
+                false,
+                format!("Failed to close event markets: {}", e),
                 serde_json::json!(null),
             ))
         }
