@@ -46,7 +46,9 @@ pub async fn create_event(req: web::Json<CreateEventRequest>) -> impl Responder 
             "id": outcome_id,
             "event_id": event_id,
             "name": outcome_input.name,
-            "status": outcome_input.status
+            "status": outcome_input.status,
+            "yes_market_id": yes_market_id,
+            "no_market_id": no_market_id
         }));
     }
 
@@ -59,7 +61,7 @@ pub async fn create_event(req: web::Json<CreateEventRequest>) -> impl Responder 
         status: req.status.clone(),
         resolved_at: req.resolved_at.clone(),
         created_by: req.created_by,
-        outcomes: outcomes_data,
+        outcomes: outcomes_data.clone(),
         timestamp: Utc::now(),
     });
 
@@ -68,6 +70,33 @@ pub async fn create_event(req: web::Json<CreateEventRequest>) -> impl Responder 
         return HttpResponse::InternalServerError().json(json!({
             "status": "error",
             "message": "Failed to create event"
+        }));
+    }
+
+    let init_markets_data = json!({
+        "event_id": event_id,
+        "outcomes": outcomes_data.iter().map(|outcome| {
+            json!({
+                "outcome_id": outcome.outcome_id,
+                "yes_market_id": outcome.yes_market_id,
+                "no_market_id": outcome.no_market_id,
+            })
+        }).collect::<Vec<_>>()
+    });
+
+    let request_id = Uuid::new_v4().to_string();
+    let init_request = RedisRequest::new(
+        "engine",
+        "init-event-markets",
+        "Initialize event markets",
+        init_markets_data,
+    );
+
+    if let Err(e) = send_request_and_wait(request_id, init_request, 10).await {
+        eprintln!("Failed to initialize markets: {}", e);
+        return HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Event created but failed to initialize markets"
         }));
     }
 
@@ -212,6 +241,27 @@ pub async fn resolve_event(req: web::Json<ResolveEventRequest>) -> impl Responde
         return HttpResponse::InternalServerError().json(json!({
             "status": "error",
             "message": "Failed to resolve event"
+        }));
+    }
+
+    let close_markets_data = json!({
+        "event_id": req.event_id,
+        "winning_outcome_id": req.winning_outcome_id,
+    });
+
+    let request_id = Uuid::new_v4().to_string();
+    let close_request = RedisRequest::new(
+        "engine",
+        "close-event-markets",
+        "Close event markets",
+        close_markets_data,
+    );
+
+    if let Err(e) = send_request_and_wait(request_id, close_request, 10).await {
+        eprintln!("Failed to close markets: {}", e);
+        return HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Event resolved but failed to close markets"
         }));
     }
 
