@@ -21,3 +21,4 @@ once_cell = "1"
 fred = "9"
 engine = { path = "../engine" }
 futures-util = "0.3"
+rand = "0.8"

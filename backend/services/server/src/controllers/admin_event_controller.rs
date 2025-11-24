@@ -1,33 +1,38 @@
-use actix_web::{post, put, delete, web, HttpResponse, Responder};
-use crate::types::event_types::{CreateEventRequest, DeleteEventRequest, ResolveEventRequest, UpdateEventRequest};
 use crate::services::db_event_publisher::publish_db_event;
+use crate::types::event_types::{
+    CreateEventRequest, DeleteEventRequest, ResolveEventRequest, UpdateEventRequest,
+};
 use crate::utils::redis_stream::send_request_and_wait;
-use engine::types::db_event_types::{DbEvent, EventCreatedEvent, EventResolvedEvent, EventUpdatedEvent, EventDeletedEvent, OutcomeData};
+use actix_web::{delete, post, put, web, HttpResponse, Responder};
+use chrono::Utc;
+use engine::types::db_event_types::{
+    DbEvent, EventCreatedEvent, EventDeletedEvent, EventResolvedEvent, EventUpdatedEvent,
+    OutcomeData,
+};
+use rand::{thread_rng, Rng};
 use redis_client::RedisRequest;
 use serde_json::json;
-use validator::Validate;
-use chrono::Utc;
 use uuid::Uuid;
+use validator::Validate;
 
-
-#[post ("/create-event")]
+#[post("/create-event")]
 pub async fn create_event(req: web::Json<CreateEventRequest>) -> impl Responder {
     if let Err(e) = req.0.validate() {
         return HttpResponse::BadRequest().json(json!({
             "status": "error",
             "message": e.to_string()
-        }))
+        }));
     }
 
-    let event_id = Uuid::new_v4().as_u128() as u64;
+    let event_id = generate_safe_id();
 
     let mut outcomes_data = Vec::new();
     let mut created_outcomes = Vec::new();
 
     for outcome_input in &req.outcomes {
-        let outcome_id = Uuid::new_v4().as_u128() as u64;
-        let yes_market_id = Uuid::new_v4().as_u128() as u64;
-        let no_market_id = Uuid::new_v4().as_u128() as u64;
+        let outcome_id = generate_safe_id();
+        let yes_market_id = generate_safe_id();
+        let no_market_id = generate_safe_id();
 
         outcomes_data.push(OutcomeData {
             outcome_id,
@@ -84,7 +89,7 @@ pub async fn create_event(req: web::Json<CreateEventRequest>) -> impl Responder 
     }))
 }
 
-#[post ("/resolve-event")]
+#[post("/resolve-event")]
 pub async fn resolve_event(req: web::Json<ResolveEventRequest>) -> impl Responder {
     if let Err(e) = req.0.validate() {
         return HttpResponse::BadRequest().json(json!({
@@ -150,32 +155,38 @@ pub async fn resolve_event(req: web::Json<ResolveEventRequest>) -> impl Responde
         }),
     );
 
-    let outcome_response = match send_request_and_wait(outcome_request_id, outcome_request, 10).await {
-        Ok(response) => {
-            if response.status_code >= 400 {
-                if response.status_code == 404 {
-                    return HttpResponse::BadRequest().json(json!({
+    let outcome_response =
+        match send_request_and_wait(outcome_request_id, outcome_request, 10).await {
+            Ok(response) => {
+                if response.status_code >= 400 {
+                    if response.status_code == 404 {
+                        return HttpResponse::BadRequest().json(json!({
+                            "status": "error",
+                            "message": "Winning outcome not found"
+                        }));
+                    }
+                    return HttpResponse::InternalServerError().json(json!({
                         "status": "error",
-                        "message": "Winning outcome not found"
+                        "message": "failed to load winning outcome"
                     }));
                 }
+                response
+            }
+            Err(e) => {
+                eprintln!("Failed to fetch outcome: {}", e);
                 return HttpResponse::InternalServerError().json(json!({
                     "status": "error",
                     "message": "failed to load winning outcome"
                 }));
             }
-            response
-        }
-        Err(e) => {
-            eprintln!("Failed to fetch outcome: {}", e);
-            return HttpResponse::InternalServerError().json(json!({
-                "status": "error",
-                "message": "failed to load winning outcome"
-            }));
-        }
-    };
+        };
 
-    let outcome_event_id = outcome_response.data["event_id"].as_i64().unwrap_or(0);
+    let outcome_data = outcome_response
+        .data
+        .get("outcome")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!(null));
+    let outcome_event_id = outcome_data["event_id"].as_i64().unwrap_or(0);
     if outcome_event_id != event_id {
         return HttpResponse::BadRequest().json(json!({
             "status": "error",
@@ -183,7 +194,10 @@ pub async fn resolve_event(req: web::Json<ResolveEventRequest>) -> impl Responde
         }));
     }
 
-    let resolved_at_value = req.resolved_at.clone().unwrap_or_else(|| Utc::now().to_rfc3339());
+    let resolved_at_value = req
+        .resolved_at
+        .clone()
+        .unwrap_or_else(|| Utc::now().to_rfc3339());
 
     let event_resolved = DbEvent::EventResolved(EventResolvedEvent {
         event_id: req.event_id,
@@ -210,7 +224,7 @@ pub async fn resolve_event(req: web::Json<ResolveEventRequest>) -> impl Responde
     }))
 }
 
-#[put ("/update-event")]
+#[put("/update-event")]
 pub async fn update_event(req: web::Json<UpdateEventRequest>) -> impl Responder {
     if let Err(e) = req.0.validate() {
         return HttpResponse::BadRequest().json(json!({
@@ -265,11 +279,31 @@ pub async fn update_event(req: web::Json<UpdateEventRequest>) -> impl Responder 
         }));
     }
 
-    let slug = req.slug.as_ref().unwrap_or(&event_data["slug"].as_str().unwrap_or("").to_string()).clone();
-    let title = req.title.as_ref().unwrap_or(&event_data["title"].as_str().unwrap_or("").to_string()).clone();
-    let description = req.description.as_ref().unwrap_or(&event_data["description"].as_str().unwrap_or("").to_string()).clone();
-    let status = req.status.as_ref().unwrap_or(&event_status.to_string()).clone();
-    let category = req.category.as_ref().unwrap_or(&event_data["category"].as_str().unwrap_or("").to_string()).clone();
+    let slug = req
+        .slug
+        .as_ref()
+        .unwrap_or(&event_data["slug"].as_str().unwrap_or("").to_string())
+        .clone();
+    let title = req
+        .title
+        .as_ref()
+        .unwrap_or(&event_data["title"].as_str().unwrap_or("").to_string())
+        .clone();
+    let description = req
+        .description
+        .as_ref()
+        .unwrap_or(&event_data["description"].as_str().unwrap_or("").to_string())
+        .clone();
+    let status = req
+        .status
+        .as_ref()
+        .unwrap_or(&event_status.to_string())
+        .clone();
+    let category = req
+        .category
+        .as_ref()
+        .unwrap_or(&event_data["category"].as_str().unwrap_or("").to_string())
+        .clone();
 
     let event_updated = DbEvent::EventUpdated(EventUpdatedEvent {
         event_id: req.event_id,
@@ -377,6 +411,11 @@ pub async fn delete_event(req: web::Json<DeleteEventRequest>) -> impl Responder 
     HttpResponse::Ok().json(json!({
         "status": "success",
         "message": "Event deleted succesfully",
-        "event_id": req.event_id 
+        "event_id": req.event_id
     }))
+}
+
+fn generate_safe_id() -> u64 {
+    let mut rng = thread_rng();
+    rng.gen_range(1..=9_000_000_000_000_000u64)
 }
