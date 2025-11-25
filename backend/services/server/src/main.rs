@@ -12,6 +12,9 @@ use crate::controllers::order_controller::{
     cancel_order, get_open_orders, get_order_history, get_order_status, get_orders_by_market,
     get_orders_by_user, merge_order, modify_order, place_order, split_order,
 };
+use crate::controllers::orderbook_controller::{
+    get_orderbook_by_market, get_orderbooks_by_event, get_orderbooks_by_outcome,
+};
 use crate::controllers::position_controller::{
     get_portfolio, get_position_by_market, get_positions, get_positions_history,
 };
@@ -63,6 +66,9 @@ async fn run() -> std::io::Result<()> {
             .service(get_all_events)
             .service(search_events)
             .service(get_event_by_id)
+            .service(get_orderbook_by_market)
+            .service(get_orderbooks_by_event)
+            .service(get_orderbooks_by_outcome)
             .route("/health", web::get().to(health))
             .service(
                 web::scope("")
