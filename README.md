@@ -274,6 +274,15 @@ Options:
 
 The trading engine has been extensively benchmarked to ensure high performance under various workloads. All benchmarks were run on optimized release builds.
 
+### Latency 
+
+Single-order latency defines how quickly fully sequential workloads (typical for deterministically processed orderbooks) can turn around orders and trades:
+
+- **Matching orders:** **200 microseconds** → **~5,000 trades/sec**
+- **Non-matching limit orders:** **201 microseconds** → **~5,000 inserts/sec**
+- **Order cancellations:** **200 microseconds** → **~5,000 cancels/sec**
+- **Orderbook queries:** **7-15 microseconds** for best bid/ask, full snapshot, and user-order lookups
+
 ### Throughput Performance
 
 **Order Processing Throughput:**
@@ -296,24 +305,19 @@ The trading engine has been extensively benchmarked to ensure high performance u
 
 ### Latency Performance
 
-**Single Order Latency:**
-- Matching orders: **217 microseconds** (~4,600 orders/second sequential)
-- Non-matching orders: **201 microseconds** (~5,000 orders/second sequential)
-- Order cancellation: **212 microseconds**
+While sequential latency is the headline metric, the engine also maintains extremely low microsecond-level access times for read-heavy workloads:
 
-**Orderbook Query Latency:**
-- Best bid query: **7.4 microseconds**
-- Best ask query: **7.4 microseconds**
-- Full orderbook snapshot: **8.6 microseconds**
-- User open orders: **14.4 microseconds**
+- Best bid/ask queries: **~7.4 microseconds**
+- Full orderbook snapshot: **~8.6 microseconds**
+- User open orders: **~14.4 microseconds**
 
 ### Performance Summary
 
 | Metric | Value |
 |--------|-------|
+| **Single Order Latency** | 200-217 microseconds (~4.6-5.0k seq orders/sec) |
 | **Sustained Order Throughput** | 57,000 - 77,000 orders/sec |
 | **Peak Concurrent Throughput** | ~200,000 ops/sec |
-| **Single Order Latency** | 200-217 microseconds |
 | **Order Cancellation Latency** | ~212 microseconds |
 | **Orderbook Query Latency** | 7-15 microseconds |
 
