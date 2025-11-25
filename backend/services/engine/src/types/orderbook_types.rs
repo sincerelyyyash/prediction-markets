@@ -1,4 +1,5 @@
-use serde::{Serialize, Deserialize};
+use crate::types::market_types::MarketSide;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 
@@ -40,7 +41,7 @@ pub enum OrderSide {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrderbookSnapshot {
     pub market_id: u64,
-    pub bids: Vec<Level>, 
+    pub bids: Vec<Level>,
     pub asks: Vec<Level>,
     pub last_price: Option<u64>,
 }
@@ -51,3 +52,22 @@ pub struct Level {
     pub quantity: u64,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MarketOrderbookSnapshot {
+    pub market_id: u64,
+    pub side: Option<MarketSide>,
+    pub snapshot: OrderbookSnapshot,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OutcomeOrderbookSnapshot {
+    pub outcome_id: u64,
+    pub event_id: Option<u64>,
+    pub markets: Vec<MarketOrderbookSnapshot>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventOrderbookSnapshot {
+    pub event_id: u64,
+    pub outcomes: Vec<OutcomeOrderbookSnapshot>,
+}
