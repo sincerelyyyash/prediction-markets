@@ -110,6 +110,67 @@ Shared Redis client package providing unified Redis Streams communication.
 - Request-response pattern support
 - Error handling and reconnection logic
 
+## Performance Benchmarks
+
+**Note:** These benchmarks measure the **orderbook/engine component** performance in isolation, not the complete end-to-end system (which includes network latency, database I/O, and Redis communication overhead).
+
+The trading engine has been extensively benchmarked to ensure high performance under various workloads. All benchmarks were run on optimized release builds.
+
+### Latency 
+
+Single-order latency defines how quickly fully sequential workloads (typical for deterministically processed orderbooks) can turn around orders and trades:
+
+- **Matching orders:** **200 microseconds** → **~5,000 trades/sec**
+- **Non-matching limit orders:** **201 microseconds** → **~5,000 inserts/sec**
+- **Order cancellations:** **200 microseconds** → **~5,000 cancels/sec**
+- **Orderbook queries:** **7-15 microseconds** for best bid/ask, full snapshot, and user-order lookups
+
+### Throughput Performance
+
+**Order Processing Throughput:**
+- **Matching-Heavy Workload** (orders that create trades):
+  - 1,000 orders: **58,240 orders/second**
+  - 10,000 orders: **62,241 orders/second**
+  - 50,000 orders: **57,331 orders/second**
+  - Average: **~59,000 orders/second**
+
+- **Orderbook-Building Workload** (non-matching limit orders):
+  - 1,000 orders: **66,804 orders/second**
+  - 10,000 orders: **76,172 orders/second**
+  - 50,000 orders: **77,178 orders/second**
+  - Average: **~73,000 orders/second**
+
+**Concurrent User Capacity:**
+- 100 concurrent users: **~200,000 operations/second**
+- 500 concurrent users: **~198,000 operations/second**
+- 1,000 concurrent users: **~193,000 operations/second**
+
+### Latency Performance
+
+While sequential latency is the headline metric, the engine also maintains extremely low microsecond-level access times for read-heavy workloads:
+
+- Best bid/ask queries: **~7.4 microseconds**
+- Full orderbook snapshot: **~8.6 microseconds**
+- User open orders: **~14.4 microseconds**
+
+### Performance Summary
+
+| Metric | Value |
+|--------|-------|
+| **Single Order Latency** | 200-217 microseconds (~4.6-5.0k seq orders/sec) |
+| **Sustained Order Throughput** | 57,000 - 77,000 orders/sec |
+| **Peak Concurrent Throughput** | ~200,000 ops/sec |
+| **Order Cancellation Latency** | ~212 microseconds |
+| **Orderbook Query Latency** | 7-15 microseconds |
+
+**Important:** These benchmarks measure the **orderbook/engine component** performance in isolation. Real-world end-to-end performance will include additional overhead from:
+- Network latency (HTTP requests/responses)
+- Redis Streams message passing
+- Database I/O operations
+- Serialization/deserialization
+
+These benchmarks demonstrate the engine's core ability to handle high-frequency trading scenarios while maintaining low latency for real-time order processing and orderbook queries at the orderbook level.
+
 ## Features
 
 ### Trading Operations
@@ -267,67 +328,6 @@ Options:
 - `concurrent` - Concurrent users benchmark
 - `latency` - Single order latency benchmark
 - `quick` - Quick benchmarks with reduced sample size
-
-## Performance Benchmarks
-
-**Note:** These benchmarks measure the **orderbook/engine component** performance in isolation, not the complete end-to-end system (which includes network latency, database I/O, and Redis communication overhead).
-
-The trading engine has been extensively benchmarked to ensure high performance under various workloads. All benchmarks were run on optimized release builds.
-
-### Latency 
-
-Single-order latency defines how quickly fully sequential workloads (typical for deterministically processed orderbooks) can turn around orders and trades:
-
-- **Matching orders:** **200 microseconds** → **~5,000 trades/sec**
-- **Non-matching limit orders:** **201 microseconds** → **~5,000 inserts/sec**
-- **Order cancellations:** **200 microseconds** → **~5,000 cancels/sec**
-- **Orderbook queries:** **7-15 microseconds** for best bid/ask, full snapshot, and user-order lookups
-
-### Throughput Performance
-
-**Order Processing Throughput:**
-- **Matching-Heavy Workload** (orders that create trades):
-  - 1,000 orders: **58,240 orders/second**
-  - 10,000 orders: **62,241 orders/second**
-  - 50,000 orders: **57,331 orders/second**
-  - Average: **~59,000 orders/second**
-
-- **Orderbook-Building Workload** (non-matching limit orders):
-  - 1,000 orders: **66,804 orders/second**
-  - 10,000 orders: **76,172 orders/second**
-  - 50,000 orders: **77,178 orders/second**
-  - Average: **~73,000 orders/second**
-
-**Concurrent User Capacity:**
-- 100 concurrent users: **~200,000 operations/second**
-- 500 concurrent users: **~198,000 operations/second**
-- 1,000 concurrent users: **~193,000 operations/second**
-
-### Latency Performance
-
-While sequential latency is the headline metric, the engine also maintains extremely low microsecond-level access times for read-heavy workloads:
-
-- Best bid/ask queries: **~7.4 microseconds**
-- Full orderbook snapshot: **~8.6 microseconds**
-- User open orders: **~14.4 microseconds**
-
-### Performance Summary
-
-| Metric | Value |
-|--------|-------|
-| **Single Order Latency** | 200-217 microseconds (~4.6-5.0k seq orders/sec) |
-| **Sustained Order Throughput** | 57,000 - 77,000 orders/sec |
-| **Peak Concurrent Throughput** | ~200,000 ops/sec |
-| **Order Cancellation Latency** | ~212 microseconds |
-| **Orderbook Query Latency** | 7-15 microseconds |
-
-**Important:** These benchmarks measure the **orderbook/engine component** performance in isolation. Real-world end-to-end performance will include additional overhead from:
-- Network latency (HTTP requests/responses)
-- Redis Streams message passing
-- Database I/O operations
-- Serialization/deserialization
-
-These benchmarks demonstrate the engine's core ability to handle high-frequency trading scenarios while maintaining low latency for real-time order processing and orderbook queries at the orderbook level.
 
 ## Design Principles
 
