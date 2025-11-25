@@ -46,9 +46,9 @@ run_benchmark() {
     echo "----------------------------------------"
     
     if [ -n "$extra_args" ]; then
-        cargo bench --bench orderbook_benchmark "$bench_filter" -- $extra_args
+        cargo bench --bench orderbook_benchmark -- "$bench_filter" $extra_args
     else
-        cargo bench --bench orderbook_benchmark "$bench_filter"
+        cargo bench --bench orderbook_benchmark -- "$bench_filter"
     fi
     
     echo ""

@@ -6,8 +6,8 @@ use std::time::Duration;
 // Import engine modules
 use engine::store::market::MarketStore;
 use engine::store::orderbook::spawn_orderbook_actor;
-use engine::types::market_types::{Market, MarketStatus};
-use engine::types::orderbook_types::{Order, OrderSide};
+use engine::types::market_types::MarketMeta;
+use engine::types::orderbook_types::{Order, OrderSide, OrderType};
 use engine::types::user_types::User;
 
 // ==================== TEST DATA GENERATION UTILITIES ====================
@@ -44,15 +44,27 @@ async fn setup_benchmark_context(user_count: u64) -> BenchmarkContext {
         orderbook.add_user(user).await;
     }
 
-    // Create active market
-    let market_id = 1u64;
-    let market = Market {
-        market_id,
-        status: MarketStatus::Active,
-    };
-    market_store.register_market(market).ok();
+    // Initialize markets using MarketMeta (paired Yes/No markets)
+    // For benchmarks, we use market_id 1 for Yes and 2 for No
+    let yes_market_id = 1u64;
+    let no_market_id = 2u64;
+    let event_id = 1u64;
+    let outcome_id = 1u64;
 
-    // Initialize positions for all users
+    let market_meta = MarketMeta {
+        event_id,
+        outcome_id,
+        yes_market_id,
+        no_market_id,
+    };
+
+    // Initialize markets in the orderbook (this creates the orderbook data structures)
+    orderbook.init_markets(vec![market_meta]).await.ok();
+
+    // Use yes_market_id as the canonical market_id for orders
+    let market_id = yes_market_id;
+
+    // Initialize positions for all users (on the yes market)
     for user_id in 1..=user_count {
         orderbook
             .update_position(user_id, market_id, 50_000_000)
@@ -88,6 +100,7 @@ fn generate_matching_orders(
             original_qty: rng.gen_range(1..100),
             remaining_qty: rng.gen_range(1..100),
             side: side.clone(),
+            order_type: OrderType::Limit,
         });
     }
     orders
@@ -118,6 +131,7 @@ fn generate_varied_price_orders(
             original_qty: rng.gen_range(10..200),
             remaining_qty: rng.gen_range(10..200),
             side: side.clone(),
+            order_type: OrderType::Limit,
         });
     }
     orders
@@ -289,6 +303,7 @@ fn bench_concurrent_users_max_capacity(c: &mut Criterion) {
                                     original_qty: rng.gen_range(10..100),
                                     remaining_qty: rng.gen_range(10..100),
                                     side,
+                                    order_type: OrderType::Limit,
                                 };
 
                                 orderbook.place_order(order).await.ok();
@@ -334,6 +349,7 @@ fn bench_single_order_latency(c: &mut Criterion) {
                 original_qty: 100,
                 remaining_qty: 100,
                 side: OrderSide::Ask,
+                order_type: OrderType::Limit,
             };
             ctx.orderbook.place_order(maker).await.ok();
 
@@ -346,6 +362,7 @@ fn bench_single_order_latency(c: &mut Criterion) {
                 original_qty: 50,
                 remaining_qty: 50,
                 side: OrderSide::Bid,
+                order_type: OrderType::Limit,
             };
 
             black_box(ctx.orderbook.place_order(taker).await.ok())
@@ -366,6 +383,7 @@ fn bench_single_order_latency(c: &mut Criterion) {
                 original_qty: 100,
                 remaining_qty: 100,
                 side: OrderSide::Bid,
+                order_type: OrderType::Limit,
             };
 
             black_box(ctx.orderbook.place_order(order).await.ok())
@@ -395,6 +413,7 @@ fn bench_order_cancellation(c: &mut Criterion) {
                 original_qty: 100,
                 remaining_qty: 100,
                 side: OrderSide::Bid,
+                order_type: OrderType::Limit,
             };
 
             let placed = ctx.orderbook.place_order(order).await.unwrap();
