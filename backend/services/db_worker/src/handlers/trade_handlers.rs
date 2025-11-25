@@ -1,15 +1,16 @@
-use sqlx::PgPool;
-use serde_json::Value;
+use super::common::send_read_response;
 use log::info;
 use redis_client::RedisResponse;
-use super::common::send_read_response;
+use serde_json::Value;
+use sqlx::PgPool;
 
 pub async fn handle_get_trades_by_user(
     data: Value,
     pool: &PgPool,
     request_id: String,
 ) -> Result<(), String> {
-    let user_id = data["user_id"].as_u64()
+    let user_id = data["user_id"]
+        .as_u64()
         .ok_or_else(|| "Invalid user_id".to_string())? as i64;
 
     let trades = match sqlx::query!(
@@ -23,7 +24,8 @@ pub async fn handle_get_trades_by_user(
         user_id
     )
     .fetch_all(pool)
-    .await {
+    .await
+    {
         Ok(trades) => trades,
         Err(e) => {
             let error_response = RedisResponse::new(
@@ -37,20 +39,23 @@ pub async fn handle_get_trades_by_user(
         }
     };
 
-    let trades_json: Vec<serde_json::Value> = trades.iter().map(|t| {
-        serde_json::json!({
-            "trade_id": t.trade_id,
-            "market_id": t.market_id,
-            "taker_order_id": t.taker_order_id,
-            "maker_order_id": t.maker_order_id,
-            "taker_user_id": t.taker_user_id,
-            "maker_user_id": t.maker_user_id,
-            "price": t.price,
-            "quantity": t.quantity,
-            "taker_side": t.taker_side,
-            "executed_at": t.executed_at
+    let trades_json: Vec<serde_json::Value> = trades
+        .iter()
+        .map(|t| {
+            serde_json::json!({
+                "trade_id": t.trade_id,
+                "market_id": t.market_id,
+                "taker_order_id": t.taker_order_id,
+                "maker_order_id": t.maker_order_id,
+                "taker_user_id": t.taker_user_id,
+                "maker_user_id": t.maker_user_id,
+                "price": t.price,
+                "quantity": t.quantity,
+                "taker_side": t.taker_side,
+                "executed_at": t.executed_at
+            })
         })
-    }).collect();
+        .collect();
 
     let response_data = serde_json::json!({
         "status": "success",
@@ -59,15 +64,13 @@ pub async fn handle_get_trades_by_user(
         "count": trades.len()
     });
 
-    let response = RedisResponse::new(
-        200,
-        true,
-        "Trades fetched successfully",
-        response_data,
-    );
+    let response = RedisResponse::new(200, true, "Trades fetched successfully", response_data);
 
     send_read_response(&request_id, response).await?;
-    info!("Processed get_trades_by_user request: request_id={}, user_id={}", request_id, user_id);
+    info!(
+        "Processed get_trades_by_user request: request_id={}, user_id={}",
+        request_id, user_id
+    );
     Ok(())
 }
 
@@ -76,7 +79,8 @@ pub async fn handle_get_trade_by_id(
     pool: &PgPool,
     request_id: String,
 ) -> Result<(), String> {
-    let trade_id = data["trade_id"].as_str()
+    let trade_id = data["trade_id"]
+        .as_str()
         .ok_or_else(|| "Invalid trade_id".to_string())?;
 
     let trade = match sqlx::query!(
@@ -89,15 +93,12 @@ pub async fn handle_get_trade_by_id(
         trade_id
     )
     .fetch_optional(pool)
-    .await {
+    .await
+    {
         Ok(Some(trade)) => trade,
         Ok(None) => {
-            let response = RedisResponse::new(
-                404,
-                false,
-                "Trade not found",
-                serde_json::json!(null),
-            );
+            let response =
+                RedisResponse::new(404, false, "Trade not found", serde_json::json!(null));
             send_read_response(&request_id, response).await?;
             return Ok(());
         }
@@ -130,15 +131,13 @@ pub async fn handle_get_trade_by_id(
         }
     });
 
-    let response = RedisResponse::new(
-        200,
-        true,
-        "Trade fetched successfully",
-        response_data,
-    );
+    let response = RedisResponse::new(200, true, "Trade fetched successfully", response_data);
 
     send_read_response(&request_id, response).await?;
-    info!("Processed get_trade_by_id request: request_id={}, trade_id={}", request_id, trade_id);
+    info!(
+        "Processed get_trade_by_id request: request_id={}, trade_id={}",
+        request_id, trade_id
+    );
     Ok(())
 }
 
@@ -147,7 +146,8 @@ pub async fn handle_get_trades_by_market(
     pool: &PgPool,
     request_id: String,
 ) -> Result<(), String> {
-    let market_id = data["market_id"].as_u64()
+    let market_id = data["market_id"]
+        .as_u64()
         .ok_or_else(|| "Invalid market_id".to_string())? as i64;
 
     let trades = match sqlx::query!(
@@ -161,7 +161,8 @@ pub async fn handle_get_trades_by_market(
         market_id
     )
     .fetch_all(pool)
-    .await {
+    .await
+    {
         Ok(trades) => trades,
         Err(e) => {
             let error_response = RedisResponse::new(
@@ -175,20 +176,23 @@ pub async fn handle_get_trades_by_market(
         }
     };
 
-    let trades_json: Vec<serde_json::Value> = trades.iter().map(|t| {
-        serde_json::json!({
-            "trade_id": t.trade_id,
-            "market_id": t.market_id,
-            "taker_order_id": t.taker_order_id,
-            "maker_order_id": t.maker_order_id,
-            "taker_user_id": t.taker_user_id,
-            "maker_user_id": t.maker_user_id,
-            "price": t.price,
-            "quantity": t.quantity,
-            "taker_side": t.taker_side,
-            "executed_at": t.executed_at
+    let trades_json: Vec<serde_json::Value> = trades
+        .iter()
+        .map(|t| {
+            serde_json::json!({
+                "trade_id": t.trade_id,
+                "market_id": t.market_id,
+                "taker_order_id": t.taker_order_id,
+                "maker_order_id": t.maker_order_id,
+                "taker_user_id": t.taker_user_id,
+                "maker_user_id": t.maker_user_id,
+                "price": t.price,
+                "quantity": t.quantity,
+                "taker_side": t.taker_side,
+                "executed_at": t.executed_at
+            })
         })
-    }).collect();
+        .collect();
 
     let response_data = serde_json::json!({
         "status": "success",
@@ -197,15 +201,12 @@ pub async fn handle_get_trades_by_market(
         "count": trades.len()
     });
 
-    let response = RedisResponse::new(
-        200,
-        true,
-        "Trades fetched successfully",
-        response_data,
-    );
+    let response = RedisResponse::new(200, true, "Trades fetched successfully", response_data);
 
     send_read_response(&request_id, response).await?;
-    info!("Processed get_trades_by_market request: request_id={}, market_id={}", request_id, market_id);
+    info!(
+        "Processed get_trades_by_market request: request_id={}, market_id={}",
+        request_id, market_id
+    );
     Ok(())
 }
-

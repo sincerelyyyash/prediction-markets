@@ -1,16 +1,17 @@
-use sqlx::PgPool;
-use serde_json::Value;
+use super::common::send_read_response;
+use crate::models::AdminTable;
 use log::info;
 use redis_client::RedisResponse;
-use crate::models::AdminTable;
-use super::common::send_read_response;
+use serde_json::Value;
+use sqlx::PgPool;
 
 pub async fn handle_get_admin_by_email(
     data: Value,
     pool: &PgPool,
     request_id: String,
 ) -> Result<(), String> {
-    let email = data["email"].as_str()
+    let email = data["email"]
+        .as_str()
         .ok_or_else(|| "Invalid email".to_string())?;
 
     let admin = match sqlx::query_as!(
@@ -23,15 +24,12 @@ pub async fn handle_get_admin_by_email(
         email
     )
     .fetch_optional(pool)
-    .await {
+    .await
+    {
         Ok(Some(admin)) => admin,
         Ok(None) => {
-            let response = RedisResponse::new(
-                404,
-                false,
-                "Admin not found",
-                serde_json::json!(null),
-            );
+            let response =
+                RedisResponse::new(404, false, "Admin not found", serde_json::json!(null));
             send_read_response(&request_id, response).await?;
             return Ok(());
         }
@@ -54,15 +52,13 @@ pub async fn handle_get_admin_by_email(
         "password": admin.password,
     });
 
-    let response = RedisResponse::new(
-        200,
-        true,
-        "Admin fetched successfully",
-        response_data,
-    );
+    let response = RedisResponse::new(200, true, "Admin fetched successfully", response_data);
 
     send_read_response(&request_id, response).await?;
-    info!("Processed get_admin_by_email request: request_id={}", request_id);
+    info!(
+        "Processed get_admin_by_email request: request_id={}",
+        request_id
+    );
     Ok(())
 }
 
@@ -71,7 +67,8 @@ pub async fn handle_get_admin_by_id(
     pool: &PgPool,
     request_id: String,
 ) -> Result<(), String> {
-    let id = data["id"].as_i64()
+    let id = data["id"]
+        .as_i64()
         .ok_or_else(|| "Invalid id".to_string())?;
 
     let admin = match sqlx::query_as!(
@@ -84,15 +81,12 @@ pub async fn handle_get_admin_by_id(
         id
     )
     .fetch_optional(pool)
-    .await {
+    .await
+    {
         Ok(Some(admin)) => admin,
         Ok(None) => {
-            let response = RedisResponse::new(
-                404,
-                false,
-                "Admin not found",
-                serde_json::json!(null),
-            );
+            let response =
+                RedisResponse::new(404, false, "Admin not found", serde_json::json!(null));
             send_read_response(&request_id, response).await?;
             return Ok(());
         }
@@ -114,15 +108,12 @@ pub async fn handle_get_admin_by_id(
         "name": admin.name,
     });
 
-    let response = RedisResponse::new(
-        200,
-        true,
-        "Admin fetched successfully",
-        response_data,
-    );
+    let response = RedisResponse::new(200, true, "Admin fetched successfully", response_data);
 
     send_read_response(&request_id, response).await?;
-    info!("Processed get_admin_by_id request: request_id={}", request_id);
+    info!(
+        "Processed get_admin_by_id request: request_id={}",
+        request_id
+    );
     Ok(())
 }
-

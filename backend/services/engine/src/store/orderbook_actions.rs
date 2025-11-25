@@ -1,6 +1,6 @@
-use crate::types::orderbook_types::{OrderbookData, Order, OrderSide};
+use crate::types::orderbook_types::{Order, OrderSide, OrderbookData};
 
-pub fn remove_order_from_book(order_id: u64, order: &Order, book: &mut OrderbookData){
+pub fn remove_order_from_book(order_id: u64, order: &Order, book: &mut OrderbookData) {
     let price = order.price;
     let qty = order.remaining_qty;
 
@@ -36,11 +36,17 @@ pub fn add_order_to_book(order_id: u64, order: &Order, book: &mut OrderbookData)
 
     match order.side {
         OrderSide::Bid => {
-            book.bid_queue.entry(order.price).or_default().push(order_id);
+            book.bid_queue
+                .entry(order.price)
+                .or_default()
+                .push(order_id);
             *book.bids.entry(order.price).or_default() += order.remaining_qty;
         }
         OrderSide::Ask => {
-            book.ask_queue.entry(order.price).or_default().push(order_id);
+            book.ask_queue
+                .entry(order.price)
+                .or_default()
+                .push(order_id);
             *book.asks.entry(order.price).or_default() += order.remaining_qty;
         }
     }

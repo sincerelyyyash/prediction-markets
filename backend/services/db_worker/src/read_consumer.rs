@@ -1,10 +1,10 @@
-use redis_client::RedisManager;
-use sqlx::PgPool;
+use crate::handlers;
 use fred::prelude::*;
 use log::{error, info};
+use redis_client::RedisManager;
 use serde_json::Value;
+use sqlx::PgPool;
 use std::collections::HashMap;
-use crate::handlers;
 
 const DB_READ_REQUESTS_STREAM: &str = "db_read_requests";
 
@@ -18,7 +18,10 @@ pub async fn start_read_request_consumer(pool: PgPool) {
     };
 
     let client = redis_manager.client();
-    info!("Starting read request consumer for stream: {}", DB_READ_REQUESTS_STREAM);
+    info!(
+        "Starting read request consumer for stream: {}",
+        DB_READ_REQUESTS_STREAM
+    );
     let mut last_id = "0".to_string();
 
     let mut iteration = 0;
@@ -27,16 +30,26 @@ pub async fn start_read_request_consumer(pool: PgPool) {
         match read_stream_messages(&client, DB_READ_REQUESTS_STREAM, &mut last_id).await {
             Ok(messages) => {
                 if !messages.is_empty() {
-                    info!("Read {} messages from stream (iteration {})", messages.len(), iteration);
+                    info!(
+                        "Read {} messages from stream (iteration {})",
+                        messages.len(),
+                        iteration
+                    );
                     if let Err(e) = process_messages(messages, &pool).await {
                         error!("Error processing read request messages: {}", e);
                     }
                 } else if iteration % 100 == 0 {
-                    info!("No messages in stream (iteration {}, last_id: {})", iteration, last_id);
+                    info!(
+                        "No messages in stream (iteration {}, last_id: {})",
+                        iteration, last_id
+                    );
                 }
             }
             Err(e) => {
-                error!("Error reading from stream {}: {}", DB_READ_REQUESTS_STREAM, e);
+                error!(
+                    "Error reading from stream {}: {}",
+                    DB_READ_REQUESTS_STREAM, e
+                );
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             }
         }
@@ -50,10 +63,10 @@ async fn read_stream_messages(
     last_id: &mut String,
 ) -> Result<Vec<(String, HashMap<String, String>)>, RedisError> {
     use fred::types::RedisValue;
-    
+
     let streams = vec![stream];
     let ids = vec![last_id.as_str()];
-    
+
     let raw_result: RedisValue = match client
         .xread::<RedisValue, _, _>(Some(10), None, streams, ids)
         .await
@@ -65,11 +78,11 @@ async fn read_stream_messages(
             return Err(e);
         }
     };
-    
+
     info!("XREAD raw result: {:?}", raw_result);
-    
+
     let mut result: Vec<(String, HashMap<String, String>)> = Vec::new();
-    
+
     if let RedisValue::Array(streams_array) = raw_result {
         for stream_entry in streams_array {
             if let RedisValue::Array(stream_data) = stream_entry {
@@ -78,23 +91,32 @@ async fn read_stream_messages(
                         for message in messages {
                             if let RedisValue::Array(msg_data) = message {
                                 if msg_data.len() >= 2 {
-                                    let msg_id = msg_data[0].as_str().map(|s| s.to_string()).unwrap_or_else(|| String::new());
-                                    
+                                    let msg_id = msg_data[0]
+                                        .as_str()
+                                        .map(|s| s.to_string())
+                                        .unwrap_or_else(|| String::new());
+
                                     if let RedisValue::Array(fields_array) = &msg_data[1] {
                                         let mut fields_map = HashMap::new();
-                                        
+
                                         for i in (0..fields_array.len()).step_by(2) {
                                             if i + 1 < fields_array.len() {
-                                                let key = fields_array[i].as_str().map(|s| s.to_string()).unwrap_or_else(|| String::new());
-                                                let value = fields_array[i + 1].as_str().map(|s| s.to_string()).unwrap_or_else(|| String::new());
+                                                let key = fields_array[i]
+                                                    .as_str()
+                                                    .map(|s| s.to_string())
+                                                    .unwrap_or_else(|| String::new());
+                                                let value = fields_array[i + 1]
+                                                    .as_str()
+                                                    .map(|s| s.to_string())
+                                                    .unwrap_or_else(|| String::new());
                                                 fields_map.insert(key, value);
                                             }
                                         }
-                                        
+
                                         if !msg_id.is_empty() && msg_id > *last_id {
                                             *last_id = msg_id.clone();
                                         }
-                                        
+
                                         result.push((msg_id, fields_map));
                                     }
                                 }
@@ -105,7 +127,7 @@ async fn read_stream_messages(
             }
         }
     }
-    
+
     Ok(result)
 }
 
@@ -114,23 +136,30 @@ async fn process_messages(
     pool: &PgPool,
 ) -> Result<(), String> {
     for (msg_id, fields) in messages {
-        let request_id = fields.get("request_id")
+        let request_id = fields
+            .get("request_id")
             .ok_or_else(|| "Missing request_id field in message".to_string())?;
-        let data_str = fields.get("data")
+        let data_str = fields
+            .get("data")
             .ok_or_else(|| "Missing data field in message".to_string())?;
 
         let request: Value = serde_json::from_str(data_str)
             .map_err(|e| format!("Failed to parse request JSON: {}", e))?;
 
-        let action = request.get("action")
+        let action = request
+            .get("action")
             .and_then(|v| v.as_str())
             .ok_or_else(|| "Missing action field".to_string())?;
 
-        let data = request.get("data")
+        let data = request
+            .get("data")
             .cloned()
             .unwrap_or_else(|| serde_json::json!({}));
 
-        info!("Processing read request: action={}, request_id={}, msg_id={}", action, request_id, msg_id);
+        info!(
+            "Processing read request: action={}, request_id={}, msg_id={}",
+            action, request_id, msg_id
+        );
 
         let result = match action {
             "get_all_events" => {
@@ -139,9 +168,7 @@ async fn process_messages(
             "get_event_by_id" => {
                 handlers::handle_get_event_by_id(data, pool, request_id.clone()).await
             }
-            "search_events" => {
-                handlers::handle_search_events(data, pool, request_id.clone()).await
-            }
+            "search_events" => handlers::handle_search_events(data, pool, request_id.clone()).await,
             "get_user_by_email" => {
                 handlers::handle_get_user_by_email(data, pool, request_id.clone()).await
             }
@@ -175,11 +202,10 @@ async fn process_messages(
             "get_user_by_id" => {
                 handlers::handle_get_user_by_id(data, pool, request_id.clone()).await
             }
-            "get_all_users" => {
-                handlers::handle_get_all_users(data, pool, request_id.clone()).await
-            }
+            "get_all_users" => handlers::handle_get_all_users(data, pool, request_id.clone()).await,
             "get_position_by_user_and_market" => {
-                handlers::handle_get_position_by_user_and_market(data, pool, request_id.clone()).await
+                handlers::handle_get_position_by_user_and_market(data, pool, request_id.clone())
+                    .await
             }
             "get_positions_by_user" => {
                 handlers::handle_get_positions_by_user(data, pool, request_id.clone()).await
@@ -203,4 +229,3 @@ async fn process_messages(
 
     Ok(())
 }
-

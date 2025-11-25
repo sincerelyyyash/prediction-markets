@@ -6,7 +6,7 @@ pub enum MarketSide {
     No,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone )]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Market {
     pub market_id: u64,
     pub status: MarketStatus,

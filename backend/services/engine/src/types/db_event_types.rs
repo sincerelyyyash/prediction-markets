@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "event_type")]
@@ -68,7 +68,7 @@ pub struct OrderFilledEvent {
     pub market_id: u64,
     pub filled_qty: u64,
     pub remaining_qty: u64,
-    pub status: String, 
+    pub status: String,
     pub timestamp: DateTime<Utc>,
 }
 
@@ -90,14 +90,14 @@ pub struct TradeExecutedEvent {
 pub struct PositionUpdatedEvent {
     pub user_id: u64,
     pub market_id: u64,
-    pub quantity: u64, 
+    pub quantity: u64,
     pub timestamp: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BalanceUpdatedEvent {
     pub user_id: u64,
-    pub balance: i64, 
+    pub balance: i64,
     pub timestamp: DateTime<Utc>,
 }
 
@@ -159,4 +159,3 @@ pub struct EventDeletedEvent {
     pub event_id: u64,
     pub timestamp: DateTime<Utc>,
 }
-

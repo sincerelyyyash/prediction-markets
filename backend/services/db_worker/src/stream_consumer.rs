@@ -1,12 +1,12 @@
-use redis_client::RedisManager;
-use sqlx::PgPool;
+use crate::dead_letter;
+use crate::handlers;
 use fred::prelude::*;
 use fred::types::XReadResponse;
 use log::{error, info};
+use redis_client::RedisManager;
 use serde_json::Value;
+use sqlx::PgPool;
 use std::collections::HashMap;
-use crate::handlers;
-use crate::dead_letter;
 
 const DB_EVENTS_STREAM: &str = "db_events";
 
@@ -20,7 +20,10 @@ pub async fn start_db_event_consumer(pool: PgPool) {
     };
 
     let client = redis_manager.client();
-    info!("Starting DB event consumer for stream: {}", DB_EVENTS_STREAM);
+    info!(
+        "Starting DB event consumer for stream: {}",
+        DB_EVENTS_STREAM
+    );
     let mut last_id = "0".to_string();
 
     loop {
@@ -47,10 +50,10 @@ async fn read_stream_messages(
     last_id: &mut String,
 ) -> Result<Vec<(String, HashMap<String, String>)>, RedisError> {
     use fred::types::RedisValue;
-    
+
     let streams = vec![stream];
     let ids = vec![last_id.as_str()];
-    
+
     let raw_result: RedisValue = match client
         .xread::<RedisValue, _, _>(Some(10), None, streams, ids)
         .await
@@ -62,9 +65,9 @@ async fn read_stream_messages(
             return Err(e);
         }
     };
-    
+
     let mut result: Vec<(String, HashMap<String, String>)> = Vec::new();
-    
+
     if let RedisValue::Array(streams_array) = raw_result {
         for stream_entry in streams_array {
             if let RedisValue::Array(stream_data) = stream_entry {
@@ -73,23 +76,32 @@ async fn read_stream_messages(
                         for message in messages {
                             if let RedisValue::Array(msg_data) = message {
                                 if msg_data.len() >= 2 {
-                                    let msg_id = msg_data[0].as_str().map(|s| s.to_string()).unwrap_or_else(|| String::new());
-                                    
+                                    let msg_id = msg_data[0]
+                                        .as_str()
+                                        .map(|s| s.to_string())
+                                        .unwrap_or_else(|| String::new());
+
                                     if let RedisValue::Array(fields_array) = &msg_data[1] {
                                         let mut fields_map = HashMap::new();
-                                        
+
                                         for i in (0..fields_array.len()).step_by(2) {
                                             if i + 1 < fields_array.len() {
-                                                let key = fields_array[i].as_str().map(|s| s.to_string()).unwrap_or_else(|| String::new());
-                                                let value = fields_array[i + 1].as_str().map(|s| s.to_string()).unwrap_or_else(|| String::new());
+                                                let key = fields_array[i]
+                                                    .as_str()
+                                                    .map(|s| s.to_string())
+                                                    .unwrap_or_else(|| String::new());
+                                                let value = fields_array[i + 1]
+                                                    .as_str()
+                                                    .map(|s| s.to_string())
+                                                    .unwrap_or_else(|| String::new());
                                                 fields_map.insert(key, value);
                                             }
                                         }
-                                        
+
                                         if !msg_id.is_empty() && msg_id > *last_id {
                                             *last_id = msg_id.clone();
                                         }
-                                        
+
                                         result.push((msg_id, fields_map));
                                     }
                                 }
@@ -100,7 +112,7 @@ async fn read_stream_messages(
             }
         }
     }
-    
+
     Ok(result)
 }
 
@@ -109,7 +121,8 @@ async fn process_messages(
     pool: &PgPool,
 ) -> Result<(), String> {
     for (msg_id, fields) in messages {
-        let data_str = fields.get("data")
+        let data_str = fields
+            .get("data")
             .ok_or_else(|| "Missing data field in message".to_string())?;
 
         let event: Value = serde_json::from_str(data_str)
@@ -131,4 +144,3 @@ async fn process_messages(
 
     Ok(())
 }
-

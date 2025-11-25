@@ -1,22 +1,21 @@
-mod stream_consumer;
-mod handlers;
 mod dead_letter;
-mod read_consumer;
+mod handlers;
 mod models;
+mod read_consumer;
+mod stream_consumer;
 
-use std::env;
 use dotenvy::dotenv;
-use sqlx::postgres::PgPoolOptions;
-use redis_client::RedisManager;
 use log::info;
+use redis_client::RedisManager;
+use sqlx::postgres::PgPoolOptions;
+use std::env;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     dotenv().ok();
     env_logger::init();
 
-    let database_url = env::var("DATABASE_URL")
-        .expect("DATABASE_URL must be set in .env");
+    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set in .env");
 
     let pool = PgPoolOptions::new()
         .max_connections(5)
@@ -26,15 +25,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Connected to Postgres Database");
 
-    let redis_url = env::var("REDIS_URL")
-        .unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
-    
-    let _redis_manager = RedisManager::init_global(&redis_url)
-        .expect("Failed to initialize Redis manager");
-    
-    _redis_manager.connect().await
+    let redis_url = env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
+
+    let _redis_manager =
+        RedisManager::init_global(&redis_url).expect("Failed to initialize Redis manager");
+
+    _redis_manager
+        .connect()
+        .await
         .expect("Failed to connect to Redis");
-    
+
     info!("Connected to Redis");
 
     let pool_clone = pool.clone();

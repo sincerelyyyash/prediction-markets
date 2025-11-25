@@ -1,4 +1,4 @@
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -7,6 +7,5 @@ pub struct User {
     pub name: String,
     pub email: String,
     pub balance: i64,
-    pub positions: HashMap<u64, u64>
+    pub positions: HashMap<u64, u64>,
 }
-

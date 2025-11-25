@@ -1,15 +1,15 @@
+use chrono::Utc;
 use std::collections::HashMap;
 use uuid::Uuid;
-use chrono::Utc;
 
+use crate::services::db_event_publisher::publish_db_event;
 use crate::store::market::MarketStore;
+use crate::types::db_event_types::{
+    BalanceUpdatedEvent, DbEvent, OrderFilledEvent, PositionUpdatedEvent, TradeExecutedEvent,
+};
 use crate::types::market_types::MarketStatus;
 use crate::types::orderbook_types::{Order, OrderSide, OrderbookData};
 use crate::types::user_types::User;
-use crate::types::db_event_types::{
-    DbEvent, TradeExecutedEvent, OrderFilledEvent, BalanceUpdatedEvent, PositionUpdatedEvent,
-};
-use crate::services::db_event_publisher::publish_db_event;
 
 pub async fn match_order(
     order: &mut Order,
@@ -41,7 +41,11 @@ async fn match_bid_against_asks(
             break;
         };
 
-        if matches!(order.order_type, crate::types::orderbook_types::OrderType::Limit) && order.price < ask_price {
+        if matches!(
+            order.order_type,
+            crate::types::orderbook_types::OrderType::Limit
+        ) && order.price < ask_price
+        {
             break;
         }
 
@@ -89,7 +93,7 @@ async fn match_bid_against_asks(
 
             let trade_id = Uuid::new_v4().to_string();
             let timestamp = Utc::now();
-            
+
             let taker_order_id = order.order_id.unwrap_or(0);
             let maker_order_id = maker_order.order_id.unwrap_or(0);
             let _ = publish_db_event(DbEvent::TradeExecuted(TradeExecutedEvent {
@@ -103,9 +107,14 @@ async fn match_bid_against_asks(
                 quantity: fill_qty,
                 taker_side: "Bid".to_string(),
                 timestamp,
-            })).await;
+            }))
+            .await;
 
-            let taker_status = if order.remaining_qty == 0 { "filled" } else { "partially_filled" };
+            let taker_status = if order.remaining_qty == 0 {
+                "filled"
+            } else {
+                "partially_filled"
+            };
             let taker_filled_qty = order.original_qty - order.remaining_qty;
             let _ = publish_db_event(DbEvent::OrderFilled(OrderFilledEvent {
                 order_id: taker_order_id,
@@ -115,9 +124,14 @@ async fn match_bid_against_asks(
                 remaining_qty: order.remaining_qty,
                 status: taker_status.to_string(),
                 timestamp,
-            })).await;
+            }))
+            .await;
 
-            let maker_status = if maker_order.remaining_qty == 0 { "filled" } else { "partially_filled" };
+            let maker_status = if maker_order.remaining_qty == 0 {
+                "filled"
+            } else {
+                "partially_filled"
+            };
             let maker_filled_qty = maker_order.original_qty - maker_order.remaining_qty;
             let _ = publish_db_event(DbEvent::OrderFilled(OrderFilledEvent {
                 order_id: maker_order_id,
@@ -127,23 +141,30 @@ async fn match_bid_against_asks(
                 remaining_qty: maker_order.remaining_qty,
                 status: maker_status.to_string(),
                 timestamp,
-            })).await;
+            }))
+            .await;
 
             let taker_balance = users.get(&order.user_id).map(|u| u.balance).unwrap_or(0);
             let _ = publish_db_event(DbEvent::BalanceUpdated(BalanceUpdatedEvent {
                 user_id: order.user_id,
                 balance: taker_balance,
                 timestamp,
-            })).await;
+            }))
+            .await;
 
-            let maker_balance = users.get(&maker_order.user_id).map(|u| u.balance).unwrap_or(0);
+            let maker_balance = users
+                .get(&maker_order.user_id)
+                .map(|u| u.balance)
+                .unwrap_or(0);
             let _ = publish_db_event(DbEvent::BalanceUpdated(BalanceUpdatedEvent {
                 user_id: maker_order.user_id,
                 balance: maker_balance,
                 timestamp,
-            })).await;
+            }))
+            .await;
 
-            let taker_position = users.get(&order.user_id)
+            let taker_position = users
+                .get(&order.user_id)
                 .and_then(|u| u.positions.get(&order.market_id))
                 .copied()
                 .unwrap_or(0);
@@ -152,9 +173,11 @@ async fn match_bid_against_asks(
                 market_id: order.market_id,
                 quantity: taker_position,
                 timestamp,
-            })).await;
+            }))
+            .await;
 
-            let maker_position = users.get(&maker_order.user_id)
+            let maker_position = users
+                .get(&maker_order.user_id)
                 .and_then(|u| u.positions.get(&maker_order.market_id))
                 .copied()
                 .unwrap_or(0);
@@ -163,7 +186,8 @@ async fn match_bid_against_asks(
                 market_id: maker_order.market_id,
                 quantity: maker_position,
                 timestamp,
-            })).await;
+            }))
+            .await;
 
             if maker_order.remaining_qty == 0 {
                 book.orders.remove(&maker_order_id);
@@ -195,7 +219,11 @@ async fn match_ask_against_bids(
             break;
         };
 
-        if matches!(order.order_type, crate::types::orderbook_types::OrderType::Limit) && order.price > bid_price {
+        if matches!(
+            order.order_type,
+            crate::types::orderbook_types::OrderType::Limit
+        ) && order.price > bid_price
+        {
             break;
         }
 
@@ -221,7 +249,9 @@ async fn match_ask_against_bids(
             *book.bids.get_mut(&bid_price).unwrap() -= fill_qty;
 
             let payment = match order.order_type {
-                crate::types::orderbook_types::OrderType::Market => (fill_price as i64) * (fill_qty as i64),
+                crate::types::orderbook_types::OrderType::Market => {
+                    (fill_price as i64) * (fill_qty as i64)
+                }
                 crate::types::orderbook_types::OrderType::Limit => 0,
             };
             update_balance(users, order.user_id, payment)?;
@@ -241,7 +271,7 @@ async fn match_ask_against_bids(
 
             let trade_id = Uuid::new_v4().to_string();
             let timestamp = Utc::now();
-            
+
             let taker_order_id = order.order_id.unwrap_or(0);
             let maker_order_id = maker_order.order_id.unwrap_or(0);
             let _ = publish_db_event(DbEvent::TradeExecuted(TradeExecutedEvent {
@@ -255,9 +285,14 @@ async fn match_ask_against_bids(
                 quantity: fill_qty,
                 taker_side: "Ask".to_string(),
                 timestamp,
-            })).await;
+            }))
+            .await;
 
-            let taker_status = if order.remaining_qty == 0 { "filled" } else { "partially_filled" };
+            let taker_status = if order.remaining_qty == 0 {
+                "filled"
+            } else {
+                "partially_filled"
+            };
             let taker_filled_qty = order.original_qty - order.remaining_qty;
             let _ = publish_db_event(DbEvent::OrderFilled(OrderFilledEvent {
                 order_id: taker_order_id,
@@ -267,9 +302,14 @@ async fn match_ask_against_bids(
                 remaining_qty: order.remaining_qty,
                 status: taker_status.to_string(),
                 timestamp,
-            })).await;
+            }))
+            .await;
 
-            let maker_status = if maker_order.remaining_qty == 0 { "filled" } else { "partially_filled" };
+            let maker_status = if maker_order.remaining_qty == 0 {
+                "filled"
+            } else {
+                "partially_filled"
+            };
             let maker_filled_qty = maker_order.original_qty - maker_order.remaining_qty;
             let _ = publish_db_event(DbEvent::OrderFilled(OrderFilledEvent {
                 order_id: maker_order_id,
@@ -279,23 +319,30 @@ async fn match_ask_against_bids(
                 remaining_qty: maker_order.remaining_qty,
                 status: maker_status.to_string(),
                 timestamp,
-            })).await;
+            }))
+            .await;
 
             let taker_balance = users.get(&order.user_id).map(|u| u.balance).unwrap_or(0);
             let _ = publish_db_event(DbEvent::BalanceUpdated(BalanceUpdatedEvent {
                 user_id: order.user_id,
                 balance: taker_balance,
                 timestamp,
-            })).await;
+            }))
+            .await;
 
-            let maker_balance = users.get(&maker_order.user_id).map(|u| u.balance).unwrap_or(0);
+            let maker_balance = users
+                .get(&maker_order.user_id)
+                .map(|u| u.balance)
+                .unwrap_or(0);
             let _ = publish_db_event(DbEvent::BalanceUpdated(BalanceUpdatedEvent {
                 user_id: maker_order.user_id,
                 balance: maker_balance,
                 timestamp,
-            })).await;
+            }))
+            .await;
 
-            let taker_position = users.get(&order.user_id)
+            let taker_position = users
+                .get(&order.user_id)
                 .and_then(|u| u.positions.get(&order.market_id))
                 .copied()
                 .unwrap_or(0);
@@ -304,9 +351,11 @@ async fn match_ask_against_bids(
                 market_id: order.market_id,
                 quantity: taker_position,
                 timestamp,
-            })).await;
+            }))
+            .await;
 
-            let maker_position = users.get(&maker_order.user_id)
+            let maker_position = users
+                .get(&maker_order.user_id)
                 .and_then(|u| u.positions.get(&maker_order.market_id))
                 .copied()
                 .unwrap_or(0);
@@ -315,7 +364,8 @@ async fn match_ask_against_bids(
                 market_id: maker_order.market_id,
                 quantity: maker_position,
                 timestamp,
-            })).await;
+            }))
+            .await;
 
             if maker_order.remaining_qty == 0 {
                 book.orders.remove(&maker_order_id);

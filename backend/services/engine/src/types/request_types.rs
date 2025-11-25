@@ -1,5 +1,5 @@
-use serde::Deserialize;
 use crate::types::orderbook_types::{OrderSide, OrderType};
+use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct PlaceOrderRequest {
@@ -21,8 +21,8 @@ fn default_order_type() -> OrderType {
 }
 
 mod order_type_string {
-    use serde::{Deserialize, Deserializer};
     use crate::types::orderbook_types::OrderType;
+    use serde::{Deserialize, Deserializer};
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<OrderType, D::Error>
     where
@@ -32,14 +32,16 @@ mod order_type_string {
         match s.as_str() {
             "Market" => Ok(OrderType::Market),
             "Limit" => Ok(OrderType::Limit),
-            _ => Err(serde::de::Error::custom("Invalid order type, must be Market or Limit")),
+            _ => Err(serde::de::Error::custom(
+                "Invalid order type, must be Market or Limit",
+            )),
         }
     }
 }
 
 mod order_side_string {
-    use serde::{Deserialize, Deserializer};
     use crate::types::orderbook_types::OrderSide;
+    use serde::{Deserialize, Deserializer};
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<OrderSide, D::Error>
     where
@@ -121,6 +123,21 @@ pub struct MergeOrderRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct GetOrderbookByMarketRequest {
+    pub market_id: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GetOrderbooksByEventRequest {
+    pub event_id: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GetOrderbooksByOutcomeRequest {
+    pub outcome_id: u64,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct MarketOutcomeData {
     pub outcome_id: u64,
     pub yes_market_id: u64,
@@ -138,4 +155,3 @@ pub struct CloseEventMarketsRequest {
     pub event_id: u64,
     pub winning_outcome_id: u64,
 }
-

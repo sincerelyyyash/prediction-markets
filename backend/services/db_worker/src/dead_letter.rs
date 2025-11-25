@@ -1,6 +1,6 @@
+use log::{error, info};
 use redis_client::RedisManager;
 use serde_json::Value;
-use log::{error, info};
 
 const DLQ_STREAM: &str = "db_events:dlq";
 
@@ -31,7 +31,10 @@ pub async fn send_to_dlq(message_id: &str, event: &Value, error: &str) -> Result
         .await
     {
         Ok(_) => {
-            info!("Sent failed message to DLQ: message_id={}, error={}", message_id, error);
+            info!(
+                "Sent failed message to DLQ: message_id={}, error={}",
+                message_id, error
+            );
             Ok(())
         }
         Err(e) => {
@@ -40,4 +43,3 @@ pub async fn send_to_dlq(message_id: &str, event: &Value, error: &str) -> Result
         }
     }
 }
-

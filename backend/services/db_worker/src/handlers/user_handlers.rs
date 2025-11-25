@@ -1,16 +1,17 @@
-use sqlx::PgPool;
-use serde_json::Value;
+use super::common::send_read_response;
+use crate::models::UserTable;
 use log::info;
 use redis_client::RedisResponse;
-use crate::models::UserTable;
-use super::common::send_read_response;
+use serde_json::Value;
+use sqlx::PgPool;
 
 pub async fn handle_get_user_by_email(
     data: Value,
     pool: &PgPool,
     request_id: String,
 ) -> Result<(), String> {
-    let email = data["email"].as_str()
+    let email = data["email"]
+        .as_str()
         .ok_or_else(|| "Invalid email".to_string())?;
 
     let user = match sqlx::query_as!(
@@ -23,15 +24,12 @@ pub async fn handle_get_user_by_email(
         email
     )
     .fetch_optional(pool)
-    .await {
+    .await
+    {
         Ok(Some(user)) => user,
         Ok(None) => {
-            let response = RedisResponse::new(
-                404,
-                false,
-                "User not found",
-                serde_json::json!(null),
-            );
+            let response =
+                RedisResponse::new(404, false, "User not found", serde_json::json!(null));
             send_read_response(&request_id, response).await?;
             return Ok(());
         }
@@ -55,15 +53,13 @@ pub async fn handle_get_user_by_email(
         "balance": user.balance,
     });
 
-    let response = RedisResponse::new(
-        200,
-        true,
-        "User fetched successfully",
-        response_data,
-    );
+    let response = RedisResponse::new(200, true, "User fetched successfully", response_data);
 
     send_read_response(&request_id, response).await?;
-    info!("Processed get_user_by_email request: request_id={}", request_id);
+    info!(
+        "Processed get_user_by_email request: request_id={}",
+        request_id
+    );
     Ok(())
 }
 
@@ -72,7 +68,8 @@ pub async fn handle_get_user_by_id(
     pool: &PgPool,
     request_id: String,
 ) -> Result<(), String> {
-    let user_id = data["user_id"].as_u64()
+    let user_id = data["user_id"]
+        .as_u64()
         .ok_or_else(|| "Invalid user_id".to_string())? as i64;
 
     let user = match sqlx::query_as!(
@@ -85,15 +82,12 @@ pub async fn handle_get_user_by_id(
         user_id
     )
     .fetch_optional(pool)
-    .await {
+    .await
+    {
         Ok(Some(user)) => user,
         Ok(None) => {
-            let response = RedisResponse::new(
-                404,
-                false,
-                "User not found",
-                serde_json::json!(null),
-            );
+            let response =
+                RedisResponse::new(404, false, "User not found", serde_json::json!(null));
             send_read_response(&request_id, response).await?;
             return Ok(());
         }
@@ -120,15 +114,13 @@ pub async fn handle_get_user_by_id(
         }
     });
 
-    let response = RedisResponse::new(
-        200,
-        true,
-        "User fetched successfully",
-        response_data,
-    );
+    let response = RedisResponse::new(200, true, "User fetched successfully", response_data);
 
     send_read_response(&request_id, response).await?;
-    info!("Processed get_user_by_id request: request_id={}, user_id={}", request_id, user_id);
+    info!(
+        "Processed get_user_by_id request: request_id={}, user_id={}",
+        request_id, user_id
+    );
     Ok(())
 }
 
@@ -146,7 +138,8 @@ pub async fn handle_get_all_users(
         "#
     )
     .fetch_all(pool)
-    .await {
+    .await
+    {
         Ok(users) => users,
         Err(e) => {
             let error_response = RedisResponse::new(
@@ -160,14 +153,17 @@ pub async fn handle_get_all_users(
         }
     };
 
-    let users_json: Vec<serde_json::Value> = users.iter().map(|u| {
-        serde_json::json!({
-            "id": u.id,
-            "email": u.email,
-            "name": u.name,
-            "balance": u.balance
+    let users_json: Vec<serde_json::Value> = users
+        .iter()
+        .map(|u| {
+            serde_json::json!({
+                "id": u.id,
+                "email": u.email,
+                "name": u.name,
+                "balance": u.balance
+            })
         })
-    }).collect();
+        .collect();
 
     let response_data = serde_json::json!({
         "status": "success",
@@ -176,15 +172,9 @@ pub async fn handle_get_all_users(
         "count": users.len()
     });
 
-    let response = RedisResponse::new(
-        200,
-        true,
-        "Users fetched successfully",
-        response_data,
-    );
+    let response = RedisResponse::new(200, true, "Users fetched successfully", response_data);
 
     send_read_response(&request_id, response).await?;
     info!("Processed get_all_users request: request_id={}", request_id);
     Ok(())
 }
-

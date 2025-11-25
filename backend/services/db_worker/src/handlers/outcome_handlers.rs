@@ -1,16 +1,17 @@
-use sqlx::PgPool;
-use serde_json::Value;
+use super::common::send_read_response;
+use crate::models::OutcomeTable;
 use log::info;
 use redis_client::RedisResponse;
-use crate::models::OutcomeTable;
-use super::common::send_read_response;
+use serde_json::Value;
+use sqlx::PgPool;
 
 pub async fn handle_get_outcome_by_id(
     data: Value,
     pool: &PgPool,
     request_id: String,
 ) -> Result<(), String> {
-    let outcome_id = data["outcome_id"].as_u64()
+    let outcome_id = data["outcome_id"]
+        .as_u64()
         .ok_or_else(|| "Invalid outcome_id".to_string())? as i64;
 
     let outcome = match sqlx::query_as!(
@@ -23,15 +24,12 @@ pub async fn handle_get_outcome_by_id(
         outcome_id
     )
     .fetch_optional(pool)
-    .await {
+    .await
+    {
         Ok(Some(outcome)) => outcome,
         Ok(None) => {
-            let response = RedisResponse::new(
-                404,
-                false,
-                "Outcome not found",
-                serde_json::json!(null),
-            );
+            let response =
+                RedisResponse::new(404, false, "Outcome not found", serde_json::json!(null));
             send_read_response(&request_id, response).await?;
             return Ok(());
         }
@@ -57,7 +55,8 @@ pub async fn handle_get_outcome_by_id(
         outcome_id
     )
     .fetch_all(pool)
-    .await {
+    .await
+    {
         Ok(markets) => markets,
         Err(e) => {
             let error_response = RedisResponse::new(
@@ -71,14 +70,17 @@ pub async fn handle_get_outcome_by_id(
         }
     };
 
-    let markets_json: Vec<serde_json::Value> = markets.iter().map(|m| {
-        serde_json::json!({
-            "id": m.id,
-            "outcome_id": m.outcome_id,
-            "side": m.side.as_str(),
-            "last_price": m.last_price
+    let markets_json: Vec<serde_json::Value> = markets
+        .iter()
+        .map(|m| {
+            serde_json::json!({
+                "id": m.id,
+                "outcome_id": m.outcome_id,
+                "side": m.side.as_str(),
+                "last_price": m.last_price
+            })
         })
-    }).collect();
+        .collect();
 
     let response_data = serde_json::json!({
         "status": "success",
@@ -92,15 +94,12 @@ pub async fn handle_get_outcome_by_id(
         }
     });
 
-    let response = RedisResponse::new(
-        200,
-        true,
-        "Outcome fetched successfully",
-        response_data,
-    );
+    let response = RedisResponse::new(200, true, "Outcome fetched successfully", response_data);
 
     send_read_response(&request_id, response).await?;
-    info!("Processed get_outcome_by_id request: request_id={}", request_id);
+    info!(
+        "Processed get_outcome_by_id request: request_id={}",
+        request_id
+    );
     Ok(())
 }
-

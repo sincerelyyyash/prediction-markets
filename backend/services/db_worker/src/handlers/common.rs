@@ -20,14 +20,10 @@ pub async fn send_read_response(
     redis_manager
         .stream_add(
             "db_read_responses",
-            &[
-                ("request_id", &request_id),
-                ("data", &response_json),
-            ],
+            &[("request_id", &request_id), ("data", &response_json)],
         )
         .await
         .map_err(|e| format!("Failed to send response: {}", e))?;
 
     Ok(())
 }
-

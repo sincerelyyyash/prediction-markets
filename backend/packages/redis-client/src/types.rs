@@ -1,5 +1,5 @@
-use serde::{Serialize, Deserialize};
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(bound(deserialize = "T: DeserializeOwned"))]
@@ -17,7 +17,12 @@ impl<T> RedisRequest<T>
 where
     T: Serialize + DeserializeOwned + Clone,
 {
-    pub fn new(service: impl Into<String>, action: impl Into<String>, message: impl Into<String>, data: T) -> Self {
+    pub fn new(
+        service: impl Into<String>,
+        action: impl Into<String>,
+        message: impl Into<String>,
+        data: T,
+    ) -> Self {
         Self {
             service: service.into(),
             action: action.into(),
@@ -52,4 +57,3 @@ where
         }
     }
 }
-

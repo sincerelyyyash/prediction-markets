@@ -8,7 +8,7 @@ use tokio::{sync::Mutex, task::JoinHandle};
 type SubscriberMap = HashMap<String, JoinHandle<()>>;
 
 #[derive(Clone)]
-pub struct RedisManager{
+pub struct RedisManager {
     client: RedisClient,
     subscribers: Arc<Mutex<SubscriberMap>>,
 }
@@ -51,8 +51,15 @@ impl RedisManager {
             .await
     }
 
-    pub async fn set_with_ttl(&self, key: &str, value: &str, seconds: i64) -> Result<(), RedisError> {
-        self.client.set::<(), _, _>(key, value, None, None, false).await?;
+    pub async fn set_with_ttl(
+        &self,
+        key: &str,
+        value: &str,
+        seconds: i64,
+    ) -> Result<(), RedisError> {
+        self.client
+            .set::<(), _, _>(key, value, None, None, false)
+            .await?;
         self.client.expire::<(), _>(key, seconds).await?;
         Ok(())
     }
@@ -79,41 +86,41 @@ impl RedisManager {
         self.client.publish::<(), _, _>(channel, payload).await
     }
 
-    pub async fn subscribe<F>(&self, channel: &str, handler: F) -> Result<(), RedisError> 
+    pub async fn subscribe<F>(&self, channel: &str, handler: F) -> Result<(), RedisError>
     where
         F: Fn(String) + Send + Sync + 'static,
-        {
-            let mut guard = self.subscribers.lock().await;
-            if let Some(handle) = guard.remove(channel) {
-                handle.abort();
-                warn!("Replaced existing subscriber channel for {}", channel);
-            }
+    {
+        let mut guard = self.subscribers.lock().await;
+        if let Some(handle) = guard.remove(channel) {
+            handle.abort();
+            warn!("Replaced existing subscriber channel for {}", channel);
+        }
 
-            let client = self.client.clone();
-            let channel_name = channel.to_string();
-            let channel_key = channel_name.clone();
-            let handler_arc = Arc::new(handler);
+        let client = self.client.clone();
+        let channel_name = channel.to_string();
+        let channel_key = channel_name.clone();
+        let handler_arc = Arc::new(handler);
 
-            let task = tokio::spawn({
-                let handler_clone = handler_arc.clone();
-                async move {
-                    if let Err(err) = client.subscribe(&channel_name).await {
-                        error!("Subscribe failed for {}: {}", channel_name, err);
-                        return;
-                    }
+        let task = tokio::spawn({
+            let handler_clone = handler_arc.clone();
+            async move {
+                if let Err(err) = client.subscribe(&channel_name).await {
+                    error!("Subscribe failed for {}: {}", channel_name, err);
+                    return;
+                }
 
-                    let mut message_stream = client.message_rx();
-                    while let Ok(message) = message_stream.recv().await {
-                        if let Some(text) = message.value.as_str() {
-                            handler_clone(text.to_string());
-                        }
+                let mut message_stream = client.message_rx();
+                while let Ok(message) = message_stream.recv().await {
+                    if let Some(text) = message.value.as_str() {
+                        handler_clone(text.to_string());
                     }
                 }
-            });
+            }
+        });
 
-            (*guard).insert(channel_key, task);
-            Ok(())
-        }
+        (*guard).insert(channel_key, task);
+        Ok(())
+    }
 
     pub async fn unsubscribe(&self, channel: &str) {
         let mut guard = self.subscribers.lock().await;

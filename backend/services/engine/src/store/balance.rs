@@ -1,10 +1,10 @@
-use std::collections::HashMap;
 use chrono::Utc;
+use std::collections::HashMap;
 
+use crate::services::db_event_publisher::publish_db_event;
+use crate::types::db_event_types::{BalanceUpdatedEvent, DbEvent, PositionUpdatedEvent};
 use crate::types::orderbook_types::{Order, OrderSide};
 use crate::types::user_types::User;
-use crate::types::db_event_types::{DbEvent, BalanceUpdatedEvent, PositionUpdatedEvent};
-use crate::services::db_event_publisher::publish_db_event;
 
 pub async fn reserve_balance(order: &Order, users: &mut HashMap<u64, User>) -> Result<(), String> {
     match order.side {
@@ -76,7 +76,7 @@ fn update_balance(users: &mut HashMap<u64, User>, user_id: u64, amount: i64) -> 
         return Err("User not found".into());
     };
     user.balance += amount;
-    
+
     let balance = user.balance;
     let timestamp = Utc::now();
     tokio::spawn(async move {
@@ -84,9 +84,10 @@ fn update_balance(users: &mut HashMap<u64, User>, user_id: u64, amount: i64) -> 
             user_id,
             balance,
             timestamp,
-        })).await;
+        }))
+        .await;
     });
-    
+
     Ok(())
 }
 
@@ -110,7 +111,7 @@ fn update_position(
     } else {
         *current
     };
-    
+
     let quantity = final_qty;
     let timestamp = Utc::now();
     tokio::spawn(async move {
@@ -119,9 +120,10 @@ fn update_position(
             market_id,
             quantity,
             timestamp,
-        })).await;
+        }))
+        .await;
     });
-    
+
     Ok(())
 }
 

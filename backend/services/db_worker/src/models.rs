@@ -46,4 +46,3 @@ pub struct AdminTable {
     pub name: String,
     pub password: String,
 }
-

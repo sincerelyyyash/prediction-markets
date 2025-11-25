@@ -1,9 +1,9 @@
-use sqlx::{PgPool, Row};
-use serde_json::Value;
+use super::common::{CACHE_TTL_EVENTS, CACHE_TTL_SEARCH, send_read_response};
+use crate::models::OutcomeTable;
 use log::{info, warn};
 use redis_client::{RedisManager, RedisResponse};
-use crate::models::OutcomeTable;
-use super::common::{send_read_response, CACHE_TTL_EVENTS, CACHE_TTL_SEARCH};
+use serde_json::Value;
+use sqlx::{PgPool, Row};
 
 pub async fn handle_get_all_events(
     data: Value,
@@ -19,7 +19,8 @@ pub async fn handle_get_all_events(
         "#
     )
     .fetch_all(pool)
-    .await {
+    .await
+    {
         Ok(rows) => rows,
         Err(e) => {
             let error_response = RedisResponse::new(
@@ -47,7 +48,8 @@ pub async fn handle_get_all_events(
             event.id
         )
         .fetch_all(pool)
-        .await {
+        .await
+        {
             Ok(outcomes) => outcomes,
             Err(e) => {
                 let error_response = RedisResponse::new(
@@ -76,7 +78,8 @@ pub async fn handle_get_all_events(
                 &outcome_ids[..]
             )
             .fetch_all(pool)
-            .await {
+            .await
+            {
                 Ok(markets) => markets,
                 Err(e) => {
                     let error_response = RedisResponse::new(
@@ -112,7 +115,7 @@ pub async fn handle_get_all_events(
                         "last_price": m.last_price
                     }))
                     .collect();
-                
+
                 serde_json::json!({
                     "id": o.id,
                     "event_id": o.event_id,
@@ -133,21 +136,22 @@ pub async fn handle_get_all_events(
 
     if let Some(redis_manager) = RedisManager::global() {
         if let Ok(response_json) = serde_json::to_string(&response_data) {
-            if let Err(e) = redis_manager.set_with_ttl("events:all", &response_json, CACHE_TTL_EVENTS).await {
+            if let Err(e) = redis_manager
+                .set_with_ttl("events:all", &response_json, CACHE_TTL_EVENTS)
+                .await
+            {
                 warn!("Failed to cache events data: {:?}", e);
             }
         }
     }
 
-    let response = RedisResponse::new(
-        200,
-        true,
-        "Events fetched successfully",
-        response_data,
-    );
+    let response = RedisResponse::new(200, true, "Events fetched successfully", response_data);
 
     send_read_response(&request_id, response).await?;
-    info!("Processed get_all_events request: request_id={}", request_id);
+    info!(
+        "Processed get_all_events request: request_id={}",
+        request_id
+    );
     Ok(())
 }
 
@@ -156,7 +160,8 @@ pub async fn handle_get_event_by_id(
     pool: &PgPool,
     request_id: String,
 ) -> Result<(), String> {
-    let event_id = data["event_id"].as_u64()
+    let event_id = data["event_id"]
+        .as_u64()
         .ok_or_else(|| "Invalid event_id".to_string())? as i64;
 
     let event = match sqlx::query!(
@@ -166,18 +171,15 @@ pub async fn handle_get_event_by_id(
         FROM events
         WHERE id = $1
         "#,
-        event_id 
+        event_id
     )
     .fetch_optional(pool)
-    .await {
+    .await
+    {
         Ok(Some(event)) => event,
         Ok(None) => {
-            let response = RedisResponse::new(
-                404,
-                false,
-                "Event not found",
-                serde_json::json!(null),
-            );
+            let response =
+                RedisResponse::new(404, false, "Event not found", serde_json::json!(null));
             send_read_response(&request_id, response).await?;
             return Ok(());
         }
@@ -203,7 +205,8 @@ pub async fn handle_get_event_by_id(
         event_id
     )
     .fetch_all(pool)
-    .await {
+    .await
+    {
         Ok(outcomes) => outcomes,
         Err(e) => {
             let error_response = RedisResponse::new(
@@ -232,7 +235,8 @@ pub async fn handle_get_event_by_id(
             &outcome_ids[..]
         )
         .fetch_all(pool)
-        .await {
+        .await
+        {
             Ok(markets) => markets,
             Err(e) => {
                 let error_response = RedisResponse::new(
@@ -272,7 +276,7 @@ pub async fn handle_get_event_by_id(
                     "last_price": m.last_price
                 }))
                 .collect();
-            
+
             serde_json::json!({
                 "id": o.id,
                 "event_id": o.event_id,
@@ -286,21 +290,22 @@ pub async fn handle_get_event_by_id(
     if let Some(redis_manager) = RedisManager::global() {
         let cache_key = format!("event:{}", event_id);
         if let Ok(response_json) = serde_json::to_string(&response_data) {
-            if let Err(e) = redis_manager.set_with_ttl(&cache_key, &response_json, CACHE_TTL_EVENTS).await {
+            if let Err(e) = redis_manager
+                .set_with_ttl(&cache_key, &response_json, CACHE_TTL_EVENTS)
+                .await
+            {
                 warn!("Failed to cache event data: {:?}", e);
             }
         }
     }
 
-    let response = RedisResponse::new(
-        200,
-        true,
-        "Event fetched successfully",
-        response_data,
-    );
+    let response = RedisResponse::new(200, true, "Event fetched successfully", response_data);
 
     send_read_response(&request_id, response).await?;
-    info!("Processed get_event_by_id request: request_id={}, event_id={}", request_id, event_id);
+    info!(
+        "Processed get_event_by_id request: request_id={}, event_id={}",
+        request_id, event_id
+    );
     Ok(())
 }
 
@@ -326,7 +331,7 @@ pub async fn handle_search_events(
             winning_outcome_id, created_by
         FROM events
         WHERE 1=1
-        "#
+        "#,
     );
 
     if let Some(search_term) = q {
@@ -359,22 +364,26 @@ pub async fn handle_search_events(
     query_builder.push(" ORDER BY id DESC");
 
     let query = query_builder.build();
-    let events_result: Result<Vec<sqlx::postgres::PgRow>, sqlx::Error> = query.fetch_all(pool).await;
+    let events_result: Result<Vec<sqlx::postgres::PgRow>, sqlx::Error> =
+        query.fetch_all(pool).await;
 
     let events = match events_result {
-        Ok(rows) => {
-            rows.iter().map(|row| serde_json::json!({
-                "id": row.get::<i64, _>("id"),
-                "slug": row.get::<String, _>("slug"),
-                "title": row.get::<String, _>("title"),
-                "description": row.get::<String, _>("description"),
-                "category": row.get::<String, _>("category"),
-                "status": row.get::<String, _>("status"),
-                "resolved_at": row.get::<Option<String>, _>("resolved_at"),
-                "winning_outcome_id": row.get::<Option<i64>, _>("winning_outcome_id"),
-                "created_by": row.get::<i64, _>("created_by"),
-            })).collect::<Vec<_>>()
-        },
+        Ok(rows) => rows
+            .iter()
+            .map(|row| {
+                serde_json::json!({
+                    "id": row.get::<i64, _>("id"),
+                    "slug": row.get::<String, _>("slug"),
+                    "title": row.get::<String, _>("title"),
+                    "description": row.get::<String, _>("description"),
+                    "category": row.get::<String, _>("category"),
+                    "status": row.get::<String, _>("status"),
+                    "resolved_at": row.get::<Option<String>, _>("resolved_at"),
+                    "winning_outcome_id": row.get::<Option<i64>, _>("winning_outcome_id"),
+                    "created_by": row.get::<i64, _>("created_by"),
+                })
+            })
+            .collect::<Vec<_>>(),
         Err(e) => {
             let error_response = RedisResponse::new(
                 500,
@@ -401,7 +410,8 @@ pub async fn handle_search_events(
             event_id
         )
         .fetch_all(pool)
-        .await {
+        .await
+        {
             Ok(outcomes) => outcomes,
             Err(e) => {
                 let error_response = RedisResponse::new(
@@ -430,7 +440,8 @@ pub async fn handle_search_events(
                 &outcome_ids[..]
             )
             .fetch_all(pool)
-            .await {
+            .await
+            {
                 Ok(markets) => markets,
                 Err(e) => {
                     let error_response = RedisResponse::new(
@@ -446,26 +457,33 @@ pub async fn handle_search_events(
         };
 
         let mut event_with_outcomes = event_json.clone();
-        event_with_outcomes["outcomes"] = serde_json::json!(outcomes.iter().map(|o| {
-            let outcome_markets: Vec<_> = markets
+        event_with_outcomes["outcomes"] = serde_json::json!(
+            outcomes
                 .iter()
-                .filter(|m| m.outcome_id == o.id)
-                .map(|m| serde_json::json!({
-                    "id": m.id,
-                    "outcome_id": m.outcome_id,
-                    "side": m.side.as_str(),
-                    "last_price": m.last_price
-                }))
-                .collect();
-            
-            serde_json::json!({
-                "id": o.id,
-                "event_id": o.event_id,
-                "name": o.name.as_str(),
-                "status": o.status.as_str(),
-                "markets": outcome_markets
-            })
-        }).collect::<Vec<_>>());
+                .map(|o| {
+                    let outcome_markets: Vec<_> = markets
+                        .iter()
+                        .filter(|m| m.outcome_id == o.id)
+                        .map(|m| {
+                            serde_json::json!({
+                                "id": m.id,
+                                "outcome_id": m.outcome_id,
+                                "side": m.side.as_str(),
+                                "last_price": m.last_price
+                            })
+                        })
+                        .collect();
+
+                    serde_json::json!({
+                        "id": o.id,
+                        "event_id": o.event_id,
+                        "name": o.name.as_str(),
+                        "status": o.status.as_str(),
+                        "markets": outcome_markets
+                    })
+                })
+                .collect::<Vec<_>>()
+        );
         events_with_outcomes.push(event_with_outcomes);
     }
 
@@ -483,21 +501,18 @@ pub async fn handle_search_events(
 
     if let Some(redis_manager) = RedisManager::global() {
         if let Ok(response_json) = serde_json::to_string(&response_data) {
-            if let Err(e) = redis_manager.set_with_ttl(&cache_key, &response_json, CACHE_TTL_SEARCH).await {
+            if let Err(e) = redis_manager
+                .set_with_ttl(&cache_key, &response_json, CACHE_TTL_SEARCH)
+                .await
+            {
                 warn!("Failed to cache search results: {:?}", e);
             }
         }
     }
 
-    let response = RedisResponse::new(
-        200,
-        true,
-        "Events searched successfully",
-        response_data,
-    );
+    let response = RedisResponse::new(200, true, "Events searched successfully", response_data);
 
     send_read_response(&request_id, response).await?;
     info!("Processed search_events request: request_id={}", request_id);
     Ok(())
 }
-

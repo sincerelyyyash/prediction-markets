@@ -1,73 +1,55 @@
-use sqlx::PgPool;
-use serde_json::Value;
-use log::{info, warn};
 use chrono::Utc;
+use log::{info, warn};
 use redis_client::RedisManager;
+use serde_json::Value;
+use sqlx::PgPool;
 
 pub async fn handle_db_event(event: Value, pool: &PgPool) -> Result<(), String> {
-    let event_type = event.get("event_type")
+    let event_type = event
+        .get("event_type")
         .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing event_type field".to_string())?;
 
     match event_type {
-        "order_placed" => {
-            handle_order_placed(event, pool).await
-        }
-        "order_cancelled" => {
-            handle_order_cancelled(event, pool).await
-        }
-        "order_modified" => {
-            handle_order_modified(event, pool).await
-        }
-        "order_filled" => {
-            handle_order_filled(event, pool).await
-        }
-        "trade_executed" => {
-            handle_trade_executed(event, pool).await
-        }
-        "position_updated" => {
-            handle_position_updated(event, pool).await
-        }
-        "balance_updated" => {
-            handle_balance_updated(event, pool).await
-        }
-        "user_created" => {
-            handle_user_created(event, pool).await
-        }
-        "event_created" => {
-            handle_event_created(event, pool).await
-        }
-        "event_resolved" => {
-            handle_event_resolved(event, pool).await
-        }
-        "event_updated" => {
-            handle_event_updated(event, pool).await
-        }
-        "event_deleted" => {
-            handle_event_deleted(event, pool).await
-        }
-        _ => {
-            Err(format!("Unknown event type: {}", event_type))
-        }
+        "order_placed" => handle_order_placed(event, pool).await,
+        "order_cancelled" => handle_order_cancelled(event, pool).await,
+        "order_modified" => handle_order_modified(event, pool).await,
+        "order_filled" => handle_order_filled(event, pool).await,
+        "trade_executed" => handle_trade_executed(event, pool).await,
+        "position_updated" => handle_position_updated(event, pool).await,
+        "balance_updated" => handle_balance_updated(event, pool).await,
+        "user_created" => handle_user_created(event, pool).await,
+        "event_created" => handle_event_created(event, pool).await,
+        "event_resolved" => handle_event_resolved(event, pool).await,
+        "event_updated" => handle_event_updated(event, pool).await,
+        "event_deleted" => handle_event_deleted(event, pool).await,
+        _ => Err(format!("Unknown event type: {}", event_type)),
     }
 }
 
 async fn handle_order_placed(event: Value, pool: &PgPool) -> Result<(), String> {
     let data = &event;
 
-    let order_id = data["order_id"].as_u64()
+    let order_id = data["order_id"]
+        .as_u64()
         .ok_or_else(|| "Invalid order_id".to_string())?;
-    let user_id = data["user_id"].as_u64()
+    let user_id = data["user_id"]
+        .as_u64()
         .ok_or_else(|| "Invalid user_id".to_string())?;
-    let market_id = data["market_id"].as_u64()
+    let market_id = data["market_id"]
+        .as_u64()
         .ok_or_else(|| "Invalid market_id".to_string())?;
-    let side = data["side"].as_str()
+    let side = data["side"]
+        .as_str()
         .ok_or_else(|| "Invalid side".to_string())?;
-    let price = data["price"].as_u64()
+    let price = data["price"]
+        .as_u64()
         .ok_or_else(|| "Invalid price".to_string())?;
-    let original_qty = data["original_qty"].as_u64()
+    let original_qty = data["original_qty"]
+        .as_u64()
         .ok_or_else(|| "Invalid original_qty".to_string())?;
-    let remaining_qty = data["remaining_qty"].as_u64()
+    let remaining_qty = data["remaining_qty"]
+        .as_u64()
         .ok_or_else(|| "Invalid remaining_qty".to_string())?;
 
     sqlx::query!(
@@ -95,7 +77,8 @@ async fn handle_order_placed(event: Value, pool: &PgPool) -> Result<(), String> 
 async fn handle_order_cancelled(event: Value, pool: &PgPool) -> Result<(), String> {
     let data = &event;
 
-    let order_id = data["order_id"].as_u64()
+    let order_id = data["order_id"]
+        .as_u64()
         .ok_or_else(|| "Invalid order_id".to_string())?;
 
     sqlx::query!(
@@ -117,13 +100,17 @@ async fn handle_order_cancelled(event: Value, pool: &PgPool) -> Result<(), Strin
 async fn handle_order_modified(event: Value, pool: &PgPool) -> Result<(), String> {
     let data = &event;
 
-    let order_id = data["order_id"].as_u64()
+    let order_id = data["order_id"]
+        .as_u64()
         .ok_or_else(|| "Invalid order_id".to_string())?;
-    let price = data["price"].as_u64()
+    let price = data["price"]
+        .as_u64()
         .ok_or_else(|| "Invalid price".to_string())?;
-    let original_qty = data["original_qty"].as_u64()
+    let original_qty = data["original_qty"]
+        .as_u64()
         .ok_or_else(|| "Invalid original_qty".to_string())?;
-    let remaining_qty = data["remaining_qty"].as_u64()
+    let remaining_qty = data["remaining_qty"]
+        .as_u64()
         .ok_or_else(|| "Invalid remaining_qty".to_string())?;
 
     sqlx::query!(
@@ -148,13 +135,17 @@ async fn handle_order_modified(event: Value, pool: &PgPool) -> Result<(), String
 async fn handle_order_filled(event: Value, pool: &PgPool) -> Result<(), String> {
     let data = &event;
 
-    let order_id = data["order_id"].as_u64()
+    let order_id = data["order_id"]
+        .as_u64()
         .ok_or_else(|| "Invalid order_id".to_string())?;
-    let filled_qty = data["filled_qty"].as_u64()
+    let filled_qty = data["filled_qty"]
+        .as_u64()
         .ok_or_else(|| "Invalid filled_qty".to_string())?;
-    let remaining_qty = data["remaining_qty"].as_u64()
+    let remaining_qty = data["remaining_qty"]
+        .as_u64()
         .ok_or_else(|| "Invalid remaining_qty".to_string())?;
-    let status = data["status"].as_str()
+    let status = data["status"]
+        .as_str()
         .ok_or_else(|| "Invalid status".to_string())?;
 
     let filled_at = if status == "filled" {
@@ -179,30 +170,42 @@ async fn handle_order_filled(event: Value, pool: &PgPool) -> Result<(), String> 
     .await
     .map_err(|e| format!("Failed to update order fill: {}", e))?;
 
-    info!("Order filled: order_id={}, filled_qty={}, status={}", order_id, filled_qty, status);
+    info!(
+        "Order filled: order_id={}, filled_qty={}, status={}",
+        order_id, filled_qty, status
+    );
     Ok(())
 }
 
 async fn handle_trade_executed(event: Value, pool: &PgPool) -> Result<(), String> {
     let data = &event;
 
-    let trade_id = data["trade_id"].as_str()
+    let trade_id = data["trade_id"]
+        .as_str()
         .ok_or_else(|| "Invalid trade_id".to_string())?;
-    let market_id = data["market_id"].as_u64()
+    let market_id = data["market_id"]
+        .as_u64()
         .ok_or_else(|| "Invalid market_id".to_string())?;
-    let taker_order_id = data["taker_order_id"].as_u64()
+    let taker_order_id = data["taker_order_id"]
+        .as_u64()
         .ok_or_else(|| "Invalid taker_order_id".to_string())?;
-    let maker_order_id = data["maker_order_id"].as_u64()
+    let maker_order_id = data["maker_order_id"]
+        .as_u64()
         .ok_or_else(|| "Invalid maker_order_id".to_string())?;
-    let taker_user_id = data["taker_user_id"].as_u64()
+    let taker_user_id = data["taker_user_id"]
+        .as_u64()
         .ok_or_else(|| "Invalid taker_user_id".to_string())?;
-    let maker_user_id = data["maker_user_id"].as_u64()
+    let maker_user_id = data["maker_user_id"]
+        .as_u64()
         .ok_or_else(|| "Invalid maker_user_id".to_string())?;
-    let price = data["price"].as_u64()
+    let price = data["price"]
+        .as_u64()
         .ok_or_else(|| "Invalid price".to_string())?;
-    let quantity = data["quantity"].as_u64()
+    let quantity = data["quantity"]
+        .as_u64()
         .ok_or_else(|| "Invalid quantity".to_string())?;
-    let taker_side = data["taker_side"].as_str()
+    let taker_side = data["taker_side"]
+        .as_str()
         .ok_or_else(|| "Invalid taker_side".to_string())?;
 
     sqlx::query!(
@@ -225,7 +228,6 @@ async fn handle_trade_executed(event: Value, pool: &PgPool) -> Result<(), String
     .await
     .map_err(|e| format!("Failed to insert trade: {}", e))?;
 
-
     sqlx::query!(
         r#"
         UPDATE markets
@@ -239,18 +241,24 @@ async fn handle_trade_executed(event: Value, pool: &PgPool) -> Result<(), String
     .await
     .map_err(|e| format!("Failed to update market last_price: {}", e))?;
 
-    info!("Trade executed: trade_id={}, market_id={}, price={}", trade_id, market_id, price);
+    info!(
+        "Trade executed: trade_id={}, market_id={}, price={}",
+        trade_id, market_id, price
+    );
     Ok(())
 }
 
 async fn handle_position_updated(event: Value, pool: &PgPool) -> Result<(), String> {
     let data = &event;
 
-    let user_id = data["user_id"].as_u64()
+    let user_id = data["user_id"]
+        .as_u64()
         .ok_or_else(|| "Invalid user_id".to_string())?;
-    let market_id = data["market_id"].as_u64()
+    let market_id = data["market_id"]
+        .as_u64()
         .ok_or_else(|| "Invalid market_id".to_string())?;
-    let quantity = data["quantity"].as_u64()
+    let quantity = data["quantity"]
+        .as_u64()
         .ok_or_else(|| "Invalid quantity".to_string())?;
 
     if quantity == 0 {
@@ -308,16 +316,21 @@ async fn handle_position_updated(event: Value, pool: &PgPool) -> Result<(), Stri
         }
     }
 
-    info!("Position updated: user_id={}, market_id={}, quantity={}", user_id, market_id, quantity);
+    info!(
+        "Position updated: user_id={}, market_id={}, quantity={}",
+        user_id, market_id, quantity
+    );
     Ok(())
 }
 
 async fn handle_balance_updated(event: Value, pool: &PgPool) -> Result<(), String> {
     let data = &event;
 
-    let user_id = data["user_id"].as_u64()
+    let user_id = data["user_id"]
+        .as_u64()
         .ok_or_else(|| "Invalid user_id".to_string())?;
-    let balance = data["balance"].as_i64()
+    let balance = data["balance"]
+        .as_i64()
         .ok_or_else(|| "Invalid balance".to_string())?;
 
     sqlx::query!(
@@ -340,15 +353,20 @@ async fn handle_balance_updated(event: Value, pool: &PgPool) -> Result<(), Strin
 async fn handle_user_created(event: Value, pool: &PgPool) -> Result<(), String> {
     let data = &event;
 
-    let user_id = data["user_id"].as_u64()
+    let user_id = data["user_id"]
+        .as_u64()
         .ok_or_else(|| "Invalid user_id".to_string())?;
-    let email = data["email"].as_str()
+    let email = data["email"]
+        .as_str()
         .ok_or_else(|| "Invalid email".to_string())?;
-    let name = data["name"].as_str()
+    let name = data["name"]
+        .as_str()
         .ok_or_else(|| "Invalid name".to_string())?;
-    let password = data["password"].as_str()
+    let password = data["password"]
+        .as_str()
         .ok_or_else(|| "Invalid password".to_string())?;
-    let balance = data["balance"].as_i64()
+    let balance = data["balance"]
+        .as_i64()
         .ok_or_else(|| "Invalid balance".to_string())?;
 
     sqlx::query!(
@@ -374,25 +392,35 @@ async fn handle_user_created(event: Value, pool: &PgPool) -> Result<(), String> 
 async fn handle_event_created(event: Value, pool: &PgPool) -> Result<(), String> {
     let data = &event;
 
-    let event_id = data["event_id"].as_u64()
+    let event_id = data["event_id"]
+        .as_u64()
         .ok_or_else(|| "Invalid event_id".to_string())?;
-    let slug = data["slug"].as_str()
+    let slug = data["slug"]
+        .as_str()
         .ok_or_else(|| "Invalid slug".to_string())?;
-    let title = data["title"].as_str()
+    let title = data["title"]
+        .as_str()
         .ok_or_else(|| "Invalid title".to_string())?;
-    let description = data["description"].as_str()
+    let description = data["description"]
+        .as_str()
         .ok_or_else(|| "Invalid description".to_string())?;
-    let category = data["category"].as_str()
+    let category = data["category"]
+        .as_str()
         .ok_or_else(|| "Invalid category".to_string())?;
-    let status = data["status"].as_str()
+    let status = data["status"]
+        .as_str()
         .ok_or_else(|| "Invalid status".to_string())?;
     let resolved_at = data["resolved_at"].as_str();
-    let created_by = data["created_by"].as_u64()
+    let created_by = data["created_by"]
+        .as_u64()
         .ok_or_else(|| "Invalid created_by".to_string())?;
-    let outcomes = data["outcomes"].as_array()
+    let outcomes = data["outcomes"]
+        .as_array()
         .ok_or_else(|| "Invalid outcomes".to_string())?;
 
-    let mut tx = pool.begin().await
+    let mut tx = pool
+        .begin()
+        .await
         .map_err(|e| format!("Failed to start transaction: {}", e))?;
 
     sqlx::query!(
@@ -415,15 +443,20 @@ async fn handle_event_created(event: Value, pool: &PgPool) -> Result<(), String>
     .map_err(|e| format!("Failed to insert event: {}", e))?;
 
     for outcome_data in outcomes {
-        let outcome_id = outcome_data["outcome_id"].as_u64()
+        let outcome_id = outcome_data["outcome_id"]
+            .as_u64()
             .ok_or_else(|| "Invalid outcome_id".to_string())?;
-        let name = outcome_data["name"].as_str()
+        let name = outcome_data["name"]
+            .as_str()
             .ok_or_else(|| "Invalid outcome name".to_string())?;
-        let outcome_status = outcome_data["status"].as_str()
+        let outcome_status = outcome_data["status"]
+            .as_str()
             .ok_or_else(|| "Invalid outcome status".to_string())?;
-        let yes_market_id = outcome_data["yes_market_id"].as_u64()
+        let yes_market_id = outcome_data["yes_market_id"]
+            .as_u64()
             .ok_or_else(|| "Invalid yes_market_id".to_string())?;
-        let no_market_id = outcome_data["no_market_id"].as_u64()
+        let no_market_id = outcome_data["no_market_id"]
+            .as_u64()
             .ok_or_else(|| "Invalid no_market_id".to_string())?;
 
         sqlx::query!(
@@ -470,12 +503,16 @@ async fn handle_event_created(event: Value, pool: &PgPool) -> Result<(), String>
         .map_err(|e| format!("Failed to insert NO market: {}", e))?;
     }
 
-    tx.commit().await
+    tx.commit()
+        .await
         .map_err(|e| format!("Failed to commit transaction: {}", e))?;
 
     if let Some(redis_manager) = RedisManager::global() {
         if let Err(e) = redis_manager.delete("events:all").await {
-            warn!("Failed to invalidate events:all cache after event creation: {:?}", e);
+            warn!(
+                "Failed to invalidate events:all cache after event creation: {:?}",
+                e
+            );
         }
     }
 
@@ -486,16 +523,22 @@ async fn handle_event_created(event: Value, pool: &PgPool) -> Result<(), String>
 async fn handle_event_resolved(event: Value, pool: &PgPool) -> Result<(), String> {
     let data = &event;
 
-    let event_id = data["event_id"].as_u64()
+    let event_id = data["event_id"]
+        .as_u64()
         .ok_or_else(|| "Invalid event_id".to_string())?;
-    let status = data["status"].as_str()
+    let status = data["status"]
+        .as_str()
         .ok_or_else(|| "Invalid status".to_string())?;
-    let resolved_at = data["resolved_at"].as_str()
+    let resolved_at = data["resolved_at"]
+        .as_str()
         .ok_or_else(|| "Invalid resolved_at".to_string())?;
-    let winning_outcome_id = data["winning_outcome_id"].as_u64()
+    let winning_outcome_id = data["winning_outcome_id"]
+        .as_u64()
         .ok_or_else(|| "Invalid winning_outcome_id".to_string())?;
 
-    let mut tx = pool.begin().await
+    let mut tx = pool
+        .begin()
+        .await
         .map_err(|e| format!("Failed to start transaction: {}", e))?;
 
     sqlx::query!(
@@ -538,37 +581,50 @@ async fn handle_event_resolved(event: Value, pool: &PgPool) -> Result<(), String
     .await
     .map_err(|e| format!("Failed to mark losing outcomes: {}", e))?;
 
-    tx.commit().await
+    tx.commit()
+        .await
         .map_err(|e| format!("Failed to commit transaction: {}", e))?;
 
     if let Some(redis_manager) = RedisManager::global() {
         let cache_key = format!("event:{}", event_id);
         if let Err(e) = redis_manager.delete("events:all").await {
-            warn!("Failed to invalidate events:all cache after resolution: {:?}", e);
+            warn!(
+                "Failed to invalidate events:all cache after resolution: {:?}",
+                e
+            );
         }
         if let Err(e) = redis_manager.delete(&cache_key).await {
             warn!("Failed to invalidate event cache after resolution: {:?}", e);
         }
     }
 
-    info!("Event resolved: event_id={}, winning_outcome_id={}", event_id, winning_outcome_id);
+    info!(
+        "Event resolved: event_id={}, winning_outcome_id={}",
+        event_id, winning_outcome_id
+    );
     Ok(())
 }
 
 async fn handle_event_updated(event: Value, pool: &PgPool) -> Result<(), String> {
     let data = &event;
 
-    let event_id = data["event_id"].as_u64()
+    let event_id = data["event_id"]
+        .as_u64()
         .ok_or_else(|| "Invalid event_id".to_string())?;
-    let slug = data["slug"].as_str()
+    let slug = data["slug"]
+        .as_str()
         .ok_or_else(|| "Invalid slug".to_string())?;
-    let title = data["title"].as_str()
+    let title = data["title"]
+        .as_str()
         .ok_or_else(|| "Invalid title".to_string())?;
-    let description = data["description"].as_str()
+    let description = data["description"]
+        .as_str()
         .ok_or_else(|| "Invalid description".to_string())?;
-    let category = data["category"].as_str()
+    let category = data["category"]
+        .as_str()
         .ok_or_else(|| "Invalid category".to_string())?;
-    let status = data["status"].as_str()
+    let status = data["status"]
+        .as_str()
         .ok_or_else(|| "Invalid status".to_string())?;
 
     sqlx::query!(
@@ -591,7 +647,10 @@ async fn handle_event_updated(event: Value, pool: &PgPool) -> Result<(), String>
     if let Some(redis_manager) = RedisManager::global() {
         let cache_key = format!("event:{}", event_id);
         if let Err(e) = redis_manager.delete("events:all").await {
-            warn!("Failed to invalidate events:all cache after update: {:?}", e);
+            warn!(
+                "Failed to invalidate events:all cache after update: {:?}",
+                e
+            );
         }
         if let Err(e) = redis_manager.delete(&cache_key).await {
             warn!("Failed to invalidate event cache after update: {:?}", e);
@@ -605,10 +664,13 @@ async fn handle_event_updated(event: Value, pool: &PgPool) -> Result<(), String>
 async fn handle_event_deleted(event: Value, pool: &PgPool) -> Result<(), String> {
     let data = &event;
 
-    let event_id = data["event_id"].as_u64()
+    let event_id = data["event_id"]
+        .as_u64()
         .ok_or_else(|| "Invalid event_id".to_string())?;
 
-    let mut tx = pool.begin().await
+    let mut tx = pool
+        .begin()
+        .await
         .map_err(|e| format!("Failed to start transaction: {}", e))?;
 
     sqlx::query!(
@@ -646,13 +708,17 @@ async fn handle_event_deleted(event: Value, pool: &PgPool) -> Result<(), String>
     .await
     .map_err(|e| format!("Failed to delete event: {}", e))?;
 
-    tx.commit().await
+    tx.commit()
+        .await
         .map_err(|e| format!("Failed to commit transaction: {}", e))?;
 
     if let Some(redis_manager) = RedisManager::global() {
         let cache_key = format!("event:{}", event_id);
         if let Err(e) = redis_manager.delete("events:all").await {
-            warn!("Failed to invalidate events:all cache after deletion: {:?}", e);
+            warn!(
+                "Failed to invalidate events:all cache after deletion: {:?}",
+                e
+            );
         }
         if let Err(e) = redis_manager.delete(&cache_key).await {
             warn!("Failed to invalidate event cache after deletion: {:?}", e);
@@ -662,4 +728,3 @@ async fn handle_event_deleted(event: Value, pool: &PgPool) -> Result<(), String>
     info!("Event deleted: event_id={}", event_id);
     Ok(())
 }
-
