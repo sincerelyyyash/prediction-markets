@@ -1,334 +1,27 @@
 use chrono::Utc;
-use std::collections::BTreeMap;
-use std::collections::HashMap;
-use tokio::sync::{mpsc, oneshot};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use tokio::sync::mpsc;
 use uuid::Uuid;
 
 use crate::services::db_event_publisher::publish_db_event;
-use crate::store::balance::reserve_balance;
-use crate::store::balance::return_reserved_balance;
-use crate::store::balance::return_unused_reservation;
+use crate::store::balance::{reserve_balance, return_reserved_balance, return_unused_reservation};
 use crate::store::market::MarketStore;
 use crate::store::matching::match_order;
-use crate::store::orderbook_actions::add_order_to_book;
-use crate::store::orderbook_actions::remove_order_from_book;
+use crate::store::orderbook::api::Orderbook;
+use crate::store::orderbook::commands::Command;
+use crate::store::orderbook::helpers::{denormalize_price, normalize_order};
+use crate::store::orderbook::snapshot::build_orderbook_snapshot;
+use crate::store::orderbook_actions::{add_order_to_book, remove_order_from_book};
 use crate::types::db_event_types::{
     BalanceUpdatedEvent, DbEvent, OrderCancelledEvent, OrderModifiedEvent, OrderPlacedEvent,
     PositionUpdatedEvent,
 };
-use crate::types::market_types::MarketMeta;
+use crate::types::market_types::{MarketSide, MarketStatus};
 use crate::types::orderbook_types::{
-    EventOrderbookSnapshot, Level, MarketOrderbookSnapshot, Order, OrderSide, OrderbookData,
-    OrderbookSnapshot, OutcomeOrderbookSnapshot,
+    EventOrderbookSnapshot, MarketOrderbookSnapshot, Order, OrderSide, OrderbookData,
+    OutcomeOrderbookSnapshot,
 };
 use crate::types::user_types::User;
-
-#[derive(Debug)]
-enum Command {
-    PlaceOrder(Order, oneshot::Sender<Result<Order, String>>),
-    CancelOrder(u64, u64, oneshot::Sender<Result<Order, String>>),
-    ModifyOrder(Order, oneshot::Sender<Result<Order, String>>),
-
-    GetBestBid(u64, oneshot::Sender<Result<u64, String>>),
-    GetBestAsk(u64, oneshot::Sender<Result<u64, String>>),
-    GetOrderBook(u64, oneshot::Sender<Result<OrderbookSnapshot, String>>),
-    GetOrderbooksByEvent(u64, oneshot::Sender<Result<EventOrderbookSnapshot, String>>),
-    GetOrderbooksByOutcome(
-        u64,
-        oneshot::Sender<Result<OutcomeOrderbookSnapshot, String>>,
-    ),
-    // GetOrderBookDepth(u64, u64, oneshot::Sender<u64>),
-    GetUserOpenOrders(u64, oneshot::Sender<Result<Vec<Order>, String>>),
-    GetOrderStatus(u64, oneshot::Sender<Result<Order, String>>),
-    AddUser(User, oneshot::Sender<Option<User>>),
-    GetUserByEmail(String, oneshot::Sender<Option<User>>),
-    GetUserById(u64, oneshot::Sender<Option<User>>),
-    GetBalance(u64, oneshot::Sender<Result<i64, String>>),
-    UpdateBalance(u64, i64, oneshot::Sender<Result<(), String>>),
-    GetPosition(u64, u64, oneshot::Sender<Result<u64, String>>),
-    GetUserPositions(u64, oneshot::Sender<Result<HashMap<u64, u64>, String>>),
-    UpdatePosition(u64, u64, i64, oneshot::Sender<Result<(), String>>),
-    CheckPositionSufficient(u64, u64, u64, oneshot::Sender<Result<bool, String>>),
-    CreateSplitPosition(u64, u64, u64, u64, oneshot::Sender<Result<(), String>>),
-    MergePosition(u64, u64, u64, oneshot::Sender<Result<(), String>>),
-    InitMarkets(Vec<MarketMeta>, oneshot::Sender<Result<(), String>>),
-    CloseEventMarkets(u64, u64, oneshot::Sender<Result<(), String>>),
-}
-
-#[derive(Clone)]
-pub struct Orderbook {
-    tx: mpsc::Sender<Command>,
-}
-
-impl Orderbook {
-    pub async fn place_order(&self, order: Order) -> Result<Order, String> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self.tx.send(Command::PlaceOrder(order, tx)).await;
-        rx.await
-            .unwrap_or_else(|_| Err("Failed to place order".into()))
-    }
-
-    pub async fn cancel_order(&self, market_id: u64, order_id: u64) -> Result<Order, String> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self
-            .tx
-            .send(Command::CancelOrder(market_id, order_id, tx))
-            .await;
-        rx.await
-            .unwrap_or_else(|_| Err("Failed to cancel order".into()))
-    }
-
-    pub async fn modify_order(&self, order: Order) -> Result<Order, String> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self.tx.send(Command::ModifyOrder(order, tx)).await;
-        rx.await
-            .unwrap_or_else(|_| Err("Failed to modify order".into()))
-    }
-
-    pub async fn best_bid(&self, market_id: u64) -> Result<u64, String> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self.tx.send(Command::GetBestBid(market_id, tx)).await;
-        rx.await
-            .unwrap_or_else(|_| Err("Failed to get best bid".into()))
-    }
-
-    pub async fn best_ask(&self, market_id: u64) -> Result<u64, String> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self.tx.send(Command::GetBestAsk(market_id, tx)).await;
-        rx.await
-            .unwrap_or_else(|_| Err("Failed to get best ask".into()))
-    }
-
-    pub async fn get_orderbook(&self, market_id: u64) -> Result<OrderbookSnapshot, String> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self.tx.send(Command::GetOrderBook(market_id, tx)).await;
-        rx.await
-            .unwrap_or_else(|_| Err("Failed to get orderbook".into()))
-    }
-
-    pub async fn get_event_orderbooks(
-        &self,
-        event_id: u64,
-    ) -> Result<EventOrderbookSnapshot, String> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self
-            .tx
-            .send(Command::GetOrderbooksByEvent(event_id, tx))
-            .await;
-        rx.await
-            .unwrap_or_else(|_| Err("Failed to get event orderbooks".into()))
-    }
-
-    pub async fn get_outcome_orderbooks(
-        &self,
-        outcome_id: u64,
-    ) -> Result<OutcomeOrderbookSnapshot, String> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self
-            .tx
-            .send(Command::GetOrderbooksByOutcome(outcome_id, tx))
-            .await;
-        rx.await
-            .unwrap_or_else(|_| Err("Failed to get outcome orderbooks".into()))
-    }
-
-    pub async fn get_user_open_orders(&self, user_id: u64) -> Result<Vec<Order>, String> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self.tx.send(Command::GetUserOpenOrders(user_id, tx)).await;
-        rx.await
-            .unwrap_or_else(|_| Err("Failed to get user orders".into()))
-    }
-
-    pub async fn get_order_status(&self, order_id: u64) -> Result<Order, String> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self.tx.send(Command::GetOrderStatus(order_id, tx)).await;
-        rx.await
-            .unwrap_or_else(|_| Err("Failed to get order status".into()))
-    }
-
-    pub async fn add_user(&self, user: User) -> Option<User> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self.tx.send(Command::AddUser(user, tx)).await;
-        rx.await.ok().flatten()
-    }
-
-    pub async fn get_user_by_email(&self, email: String) -> Option<User> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self.tx.send(Command::GetUserByEmail(email, tx)).await;
-        rx.await.ok().flatten()
-    }
-
-    pub async fn get_user_by_id(&self, id: u64) -> Option<User> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self.tx.send(Command::GetUserById(id, tx)).await;
-        rx.await.ok().flatten()
-    }
-
-    pub async fn get_balance(&self, id: u64) -> Result<i64, String> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self.tx.send(Command::GetBalance(id, tx)).await;
-        rx.await
-            .unwrap_or_else(|_| Err("failed to get balance".into()))
-    }
-
-    pub async fn update_balance(&self, id: u64, amount: i64) -> Result<(), String> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self.tx.send(Command::UpdateBalance(id, amount, tx)).await;
-        rx.await
-            .unwrap_or_else(|_| Err("failed to update balance".into()))
-    }
-
-    pub async fn get_position(&self, user_id: u64, market_id: u64) -> Result<u64, String> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self
-            .tx
-            .send(Command::GetPosition(user_id, market_id, tx))
-            .await;
-        rx.await
-            .unwrap_or_else(|_| Err("Failed to get positions".into()))
-    }
-
-    pub async fn get_user_positions(&self, user_id: u64) -> Result<HashMap<u64, u64>, String> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self.tx.send(Command::GetUserPositions(user_id, tx)).await;
-        rx.await
-            .unwrap_or_else(|_| Err("Failed to get user positions".into()))
-    }
-
-    pub async fn update_position(
-        &self,
-        user_id: u64,
-        market_id: u64,
-        amount: i64,
-    ) -> Result<(), String> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self
-            .tx
-            .send(Command::UpdatePosition(user_id, market_id, amount, tx))
-            .await;
-        rx.await
-            .unwrap_or_else(|_| Err("Failed to update position".into()))
-    }
-
-    pub async fn check_position_sufficient(
-        &self,
-        user_id: u64,
-        market_id: u64,
-        required_qty: u64,
-    ) -> Result<bool, String> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self
-            .tx
-            .send(Command::CheckPositionSufficient(
-                user_id,
-                market_id,
-                required_qty,
-                tx,
-            ))
-            .await;
-        rx.await
-            .unwrap_or_else(|_| Err("Failed to check position".into()))
-    }
-
-    pub async fn create_split_postion(
-        &self,
-        user_id: u64,
-        market1_id: u64,
-        market2_id: u64,
-        amount: u64,
-    ) -> Result<(), String> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self
-            .tx
-            .send(Command::CreateSplitPosition(
-                user_id, market1_id, market2_id, amount, tx,
-            ))
-            .await;
-        rx.await
-            .unwrap_or_else(|_| Err("Failed to create split position".into()))
-    }
-
-    pub async fn merge_position(
-        &self,
-        user_id: u64,
-        market1_id: u64,
-        market2_id: u64,
-    ) -> Result<(), String> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self
-            .tx
-            .send(Command::MergePosition(user_id, market1_id, market2_id, tx))
-            .await;
-        rx.await
-            .unwrap_or_else(|_| Err("Failed to merge position".into()))
-    }
-
-    pub async fn init_markets(&self, metas: Vec<MarketMeta>) -> Result<(), String> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self.tx.send(Command::InitMarkets(metas, tx)).await;
-        rx.await
-            .unwrap_or_else(|_| Err("Failed to init markets".into()))
-    }
-
-    pub async fn close_event_markets(
-        &self,
-        event_id: u64,
-        winning_outcome_id: u64,
-    ) -> Result<(), String> {
-        let (tx, rx) = oneshot::channel();
-        let _ = self
-            .tx
-            .send(Command::CloseEventMarkets(event_id, winning_outcome_id, tx))
-            .await;
-        rx.await
-            .unwrap_or_else(|_| Err("Failed to close event markets".into()))
-    }
-}
-
-fn normalize_order(order: &mut Order, market_store: &MarketStore) -> Result<u64, String> {
-    let Some(market) = market_store.get_market(order.market_id) else {
-        return Err("Market not found".into());
-    };
-
-    if order.price > 100 {
-        return Err("Price must be between 0 and 100".into());
-    }
-
-    if let Some(side) = &market.side {
-        use crate::types::market_types::MarketSide;
-        match side {
-            MarketSide::No => {
-                if let Some(paired_id) = market.paired_market_id {
-                    order.market_id = paired_id;
-                    order.price = 100 - order.price;
-                    order.side = match order.side {
-                        OrderSide::Bid => OrderSide::Ask,
-                        OrderSide::Ask => OrderSide::Bid,
-                    };
-                }
-            }
-            MarketSide::Yes => {}
-        }
-    }
-
-    Ok(order.market_id)
-}
-
-fn denormalize_price(market_id: u64, canonical_price: u64, market_store: &MarketStore) -> u64 {
-    let Some(market) = market_store.get_market(market_id) else {
-        return canonical_price;
-    };
-
-    if let Some(side) = &market.side {
-        use crate::types::market_types::MarketSide;
-        match side {
-            MarketSide::No => 100 - canonical_price,
-            MarketSide::Yes => canonical_price,
-        }
-    } else {
-        canonical_price
-    }
-}
 
 pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
     let (tx, mut rx) = mpsc::channel::<Command>(1000);
@@ -429,7 +122,6 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                     let original_side =
                         if let Some(market) = market_store.get_market(original_market_id) {
                             if let Some(side) = &market.side {
-                                use crate::types::market_types::MarketSide;
                                 match side {
                                     MarketSide::No => match order.side {
                                         OrderSide::Bid => OrderSide::Ask,
@@ -727,7 +419,6 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                                             market_store.get_market(*original_market_id)
                                         {
                                             if let Some(side) = &market.side {
-                                                use crate::types::market_types::MarketSide;
                                                 match side {
                                                     MarketSide::No => {
                                                         denormalized_order.market_id =
@@ -775,7 +466,6 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                             if let Some(original_market_id) = order_original_market.get(&order_id) {
                                 if let Some(market) = market_store.get_market(*original_market_id) {
                                     if let Some(side) = &market.side {
-                                        use crate::types::market_types::MarketSide;
                                         match side {
                                             MarketSide::No => {
                                                 order.market_id = *original_market_id;
@@ -1015,7 +705,7 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                 }
                 Command::CloseEventMarkets(event_id, winning_outcome_id, reply) => {
                     let market_ids = market_store.get_markets_by_event(event_id);
-                    let mut canonical_ids = std::collections::HashSet::new();
+                    let mut canonical_ids = HashSet::new();
 
                     for market_id in &market_ids {
                         if let Some(canonical_id) = alias_map.get(market_id) {
@@ -1050,8 +740,7 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                         alias_map.remove(market_id);
                     }
 
-                    let market_ids_set: std::collections::HashSet<u64> =
-                        market_ids.iter().cloned().collect();
+                    let market_ids_set: HashSet<u64> = market_ids.iter().cloned().collect();
 
                     for user in users.values_mut() {
                         let mut positions_to_remove = Vec::new();
@@ -1066,7 +755,6 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                                 if let (Some(market_outcome_id), Some(side)) =
                                     (market.outcome_id, &market.side)
                                 {
-                                    use crate::types::market_types::MarketSide;
                                     let is_winning = match side {
                                         MarketSide::Yes => market_outcome_id == winning_outcome_id,
                                         MarketSide::No => market_outcome_id != winning_outcome_id,
@@ -1105,10 +793,8 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
                         }
                     }
 
-                    let _ = market_store.update_status_bulk(
-                        market_ids.clone(),
-                        crate::types::market_types::MarketStatus::Resolved,
-                    );
+                    let _ =
+                        market_store.update_status_bulk(market_ids.clone(), MarketStatus::Resolved);
                     let _ = market_store.remove_markets_by_event(event_id);
                     let _ = reply.send(Ok(()));
                 }
@@ -1116,47 +802,5 @@ pub fn spawn_orderbook_actor(market_store: MarketStore) -> Orderbook {
         }
     });
 
-    Orderbook { tx }
-}
-
-fn build_orderbook_snapshot(
-    market_id: u64,
-    alias_map: &HashMap<u64, u64>,
-    orderbooks: &HashMap<u64, OrderbookData>,
-    market_store: &MarketStore,
-) -> Result<OrderbookSnapshot, String> {
-    let canonical_id = alias_map.get(&market_id).copied().unwrap_or(market_id);
-    let book = orderbooks
-        .get(&canonical_id)
-        .ok_or_else(|| "Market not found".to_string())?;
-
-    let bids: Vec<Level> = book
-        .bids
-        .iter()
-        .rev()
-        .map(|(price, quantity)| Level {
-            price: denormalize_price(market_id, *price, market_store),
-            quantity: *quantity,
-        })
-        .collect();
-
-    let asks: Vec<Level> = book
-        .asks
-        .iter()
-        .map(|(price, quantity)| Level {
-            price: denormalize_price(market_id, *price, market_store),
-            quantity: *quantity,
-        })
-        .collect();
-
-    let last_price = book
-        .last_price
-        .map(|p| denormalize_price(market_id, p, market_store));
-
-    Ok(OrderbookSnapshot {
-        market_id,
-        bids,
-        asks,
-        last_price,
-    })
+    Orderbook::new(tx)
 }
