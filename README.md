@@ -15,13 +15,8 @@ The backend is built as a modular monorepo using Rust's Cargo workspace, organiz
 - **DB Worker**: Database persistence and read operations handler
 - **Redis Client**: Shared Redis client package for inter-service communication
 
-### Communication Flow
+<img width="1427" height="741" alt="Screenshot 2025-11-27 at 2 09 42 PM" src="https://github.com/user-attachments/assets/10913e46-a1e0-4318-a28d-e01b296eeb51" />
 
-```
-Client → Server → Redis Streams → Engine → Redis Streams → DB Worker → PostgreSQL
-                ↓                                    ↓
-            Response Consumer                    Event Publisher
-```
 
 All services communicate asynchronously via Redis Streams, enabling horizontal scalability and fault tolerance.
 
