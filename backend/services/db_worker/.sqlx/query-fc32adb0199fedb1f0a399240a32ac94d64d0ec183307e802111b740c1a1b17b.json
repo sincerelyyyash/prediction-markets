@@ -1,0 +1,18 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE orders\n        SET filled_qty = $1, remaining_qty = $2, status = $3, updated_at = NOW(), filled_at = $4\n        WHERE order_id = $5\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8",
+        "Text",
+        "Timestamp",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "fc32adb0199fedb1f0a399240a32ac94d64d0ec183307e802111b740c1a1b17b"
+}

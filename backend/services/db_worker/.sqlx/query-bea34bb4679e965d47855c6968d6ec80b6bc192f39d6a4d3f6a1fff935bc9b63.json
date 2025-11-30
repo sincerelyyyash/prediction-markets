@@ -1,0 +1,46 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT user_id, market_id, quantity, created_at, updated_at\n        FROM positions\n        WHERE user_id = $1\n        ORDER BY updated_at DESC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "user_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "market_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "quantity",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "created_at",
+        "type_info": "Timestamp"
+      },
+      {
+        "ordinal": 4,
+        "name": "updated_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "bea34bb4679e965d47855c6968d6ec80b6bc192f39d6a4d3f6a1fff935bc9b63"
+}

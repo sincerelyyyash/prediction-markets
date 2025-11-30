@@ -3,6 +3,9 @@ name = "db_worker"
 version = "0.1.0"
 edition = "2024"
 
+[package.metadata.sqlx]
+offline = true
+
 [dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 sqlx = { version = "0.8.6", features = ["runtime-tokio-rustls", "postgres", "chrono"] }

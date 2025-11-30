@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE events\n        SET status = $1, resolved_at = $2, winning_outcome_id = $3\n        WHERE id = $4\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "25585cddd596f07885882b2d03f4b5fed2f48215cfc7782d61410ddc185ca180"
+}

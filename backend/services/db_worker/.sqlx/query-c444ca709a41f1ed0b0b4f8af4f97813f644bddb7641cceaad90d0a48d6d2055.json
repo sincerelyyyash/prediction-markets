@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        DELETE FROM markets\n        WHERE outcome_id IN (\n            SELECT id FROM outcomes WHERE event_id = $1\n        )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c444ca709a41f1ed0b0b4f8af4f97813f644bddb7641cceaad90d0a48d6d2055"
+}

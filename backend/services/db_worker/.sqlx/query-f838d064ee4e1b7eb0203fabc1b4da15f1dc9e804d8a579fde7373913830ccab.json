@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            DELETE FROM positions\n            WHERE user_id = $1 AND market_id = $2\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f838d064ee4e1b7eb0203fabc1b4da15f1dc9e804d8a579fde7373913830ccab"
+}

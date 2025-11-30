@@ -1,0 +1,76 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT trade_id, market_id, taker_order_id, maker_order_id, taker_user_id, \n               maker_user_id, price, quantity, taker_side, executed_at\n        FROM trades\n        WHERE trade_id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "trade_id",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "market_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "taker_order_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "maker_order_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "taker_user_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 5,
+        "name": "maker_user_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "price",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "quantity",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "taker_side",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 9,
+        "name": "executed_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "dd6b3eecb43ba07023d2d9f3732c2f35a402f57f809de2822c476ffef0db2790"
+}

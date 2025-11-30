@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, outcome_id, side, last_price\n        FROM markets\n        WHERE outcome_id = $1\n        ORDER BY side ASC\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "outcome_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 2,
+        "name": "side",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "last_price",
+        "type_info": "Int8"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "856cab7098279e6395aaed7c1308114df848c76b6fa60e68fe2c841ea4871e98"
+}
