@@ -27,11 +27,7 @@ This service uses `sqlx` with compile-time query checking. For builds to work on
      2. Use it directly: `export DATABASE_URL="postgresql://..."` (without `-pooler` in hostname)
      3. Or set `SQLX_DATABASE_URL` with the direct URL: `export SQLX_DATABASE_URL="postgresql://..."`
 
-2. **Commit the generated `.sqlx/` directory**:
-   ```bash
-   git add .sqlx/
-   git commit -m "Add sqlx offline query metadata"
-   ```
+2. **The `.sqlx/` directory will be generated** - This directory contains query metadata and should be kept local (it's already in `.gitignore`). You don't need to commit it.
 
 ### When Queries Change
 
@@ -39,19 +35,28 @@ If you modify any SQL queries in the codebase, you need to regenerate the metada
 
 ```bash
 ./prepare-sqlx.sh
-git add .sqlx/
-git commit -m "Update sqlx offline query metadata"
 ```
 
 ### Building on VM/CI
 
-Once the `.sqlx/` directory is committed, builds will work offline without requiring a database connection:
+**Important:** The `.sqlx/` directory is in `.gitignore` and should not be committed. For builds to work on VMs or CI/CD:
 
-```bash
-cargo build
-```
+1. **Option 1: Generate `.sqlx/` during build** (if database is available):
+   ```bash
+   export DATABASE_URL="postgresql://..."
+   ./prepare-sqlx.sh
+   cargo build
+   ```
 
-**Note:** If you still encounter errors, ensure the `.sqlx/` directory exists in the `db_worker` directory. You can also set the `SQLX_OFFLINE=true` environment variable as an additional safeguard, though it should not be necessary if the `.sqlx/` directory is present.
+2. **Option 2: Use offline mode** (if database is not available):
+   ```bash
+   export SQLX_OFFLINE=true
+   cargo build
+   ```
+   
+   Note: This requires the `.sqlx/` directory to exist. If it doesn't exist, you'll need to generate it first on a machine with database access, then copy it to your VM/CI environment.
+
+**Note:** If you encounter errors, ensure the `.sqlx/` directory exists in the `db_worker` directory, or set `SQLX_OFFLINE=true` environment variable.
 
 ## Configuration
 

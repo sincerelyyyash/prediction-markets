@@ -4,8 +4,6 @@ target/
 
 # SQLx offline data/cache
 .sqlx/
-# Exception: db_worker needs .sqlx/ for offline builds
-!backend/services/db_worker/.sqlx/
 
 # Environment files
 .env
