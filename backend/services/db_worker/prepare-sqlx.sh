@@ -7,6 +7,11 @@ set -e
 
 echo "Preparing sqlx offline query metadata..."
 
+# Get the directory where this script is located
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Navigate to workspace root (backend directory)
+WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
 # Check if DATABASE_URL is set
 if [ -z "$DATABASE_URL" ]; then
     echo "Error: DATABASE_URL environment variable is not set"
@@ -40,12 +45,15 @@ if ! command -v cargo-sqlx &> /dev/null; then
     cargo install sqlx-cli --no-default-features --features postgres
 fi
 
-# Run sqlx prepare to generate offline query metadata
-# Note: We don't echo the DB_URL to avoid exposing credentials in logs
-echo "Running cargo sqlx prepare..."
-cargo sqlx prepare --database-url "$DB_URL" 2>&1
+# Navigate to workspace root and run sqlx prepare for db_worker package
+# This ensures all queries in db_worker are analyzed
+cd "$WORKSPACE_ROOT"
+echo "Running cargo sqlx prepare from workspace root..."
+echo "Workspace: $WORKSPACE_ROOT"
+echo "Targeting package: db_worker"
+cargo sqlx prepare --database-url "$DB_URL" -- --package db_worker 2>&1
 
 echo ""
 echo "✓ sqlx offline metadata prepared successfully!"
 echo ""
-echo "The .sqlx/ directory has been generated. Builds will now work offline without requiring a database connection."
+echo "The .sqlx/ directory has been generated in services/db_worker/. Builds will now work offline without requiring a database connection."
