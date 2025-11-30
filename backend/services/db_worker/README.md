@@ -43,20 +43,51 @@ If you modify any SQL queries in the codebase, you need to regenerate the metada
 
 1. **Option 1: Generate `.sqlx/` during build** (if database is available):
    ```bash
+   cd backend/services/db_worker
    export DATABASE_URL="postgresql://..."
    ./prepare-sqlx.sh
+   cd ../../..
    cargo build
    ```
 
 2. **Option 2: Use offline mode** (if database is not available):
    ```bash
+   # CRITICAL: You MUST set SQLX_OFFLINE=true when building from workspace root
    export SQLX_OFFLINE=true
    cargo build
    ```
    
-   Note: This requires the `.sqlx/` directory to exist. If it doesn't exist, you'll need to generate it first on a machine with database access, then copy it to your VM/CI environment.
+   Note: This requires the `.sqlx/` directory to exist in `backend/services/db_worker/`. If it doesn't exist, you'll need to generate it first on a machine with database access, then copy it to your VM/CI environment.
 
-**Note:** If you encounter errors, ensure the `.sqlx/` directory exists in the `db_worker` directory, or set `SQLX_OFFLINE=true` environment variable.
+### Troubleshooting Build Errors
+
+If you see errors like `prepared statement "sqlx_s_1" does not exist`:
+
+1. **Ensure `SQLX_OFFLINE=true` is set** when building from the workspace root:
+   ```bash
+   export SQLX_OFFLINE=true
+   cargo build
+   ```
+
+2. **Verify the `.sqlx/` directory exists** in `backend/services/db_worker/`:
+   ```bash
+   ls -la backend/services/db_worker/.sqlx/
+   ```
+
+3. **If the directory doesn't exist**, generate it first:
+   ```bash
+   cd backend/services/db_worker
+   export DATABASE_URL="postgresql://..."
+   ./prepare-sqlx.sh
+   ```
+
+4. **When building from workspace root**, always set `SQLX_OFFLINE=true`:
+   ```bash
+   export SQLX_OFFLINE=true
+   cargo build --bin db_worker
+   ```
+
+**Note:** The `offline = true` in `Cargo.toml` is not always sufficient when building from a workspace root. Always set `SQLX_OFFLINE=true` environment variable for workspace builds.
 
 ## Configuration
 

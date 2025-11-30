@@ -1,0 +1,55 @@
+module.exports = {
+  apps: [
+    {
+      name: "db-worker",
+      script: "./target/release/db_worker",
+      cwd: ".",
+      env: {
+        RUST_LOG: "info",
+        SQLX_OFFLINE: "true",
+      },
+      env_file: ".env",
+      error_file: "./logs/db-worker-error.log",
+      out_file: "./logs/db-worker-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss Z",
+      autorestart: true,
+      watch: false,
+      max_memory_restart: "500M",
+      instances: 1,
+    },
+    {
+      name: "engine",
+      script: "./target/release/engine",
+      cwd: ".",
+      env: {
+        RUST_LOG: "info",
+      },
+      env_file: ".env",
+      error_file: "./logs/engine-error.log",
+      out_file: "./logs/engine-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss Z",
+      autorestart: true,
+      watch: false,
+      max_memory_restart: "500M",
+      instances: 1,
+    },
+    {
+      name: "prediction-market",
+      script: "./target/release/prediction-market",
+      cwd: ".",
+      env: {
+        RUST_LOG: "info",
+      },
+      env_file: ".env",
+      error_file: "./logs/server-error.log",
+      out_file: "./logs/server-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss Z",
+      autorestart: true,
+      watch: false,
+      max_memory_restart: "1G",
+      instances: 1,
+      port: 8000,
+    },
+  ],
+};
+
