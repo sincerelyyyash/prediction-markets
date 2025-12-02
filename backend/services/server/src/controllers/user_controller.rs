@@ -132,20 +132,21 @@ pub async fn signin_user(req: web::Json<LoginUserInput>) -> impl Responder {
         }
     };
 
-    let user_id_i64 = match user_response.data["id"].as_i64() {
-        Some(id) => id,
-        None => {
+    let user_id_u64 = if let Some(id) = user_response.data["id"].as_u64() {
+        id
+    } else if let Some(id) = user_response.data["id"].as_i64() {
+        if id < 0 {
             return HttpResponse::InternalServerError().json(json!({
                 "status": "error",
-                "message": "Invalid user data"
+                "message": "Invalid user data: negative id"
             }));
         }
-    };
-
-    let user_id_u64 = if user_id_i64 < 0 {
-        user_id_i64 as u64
+        id as u64
     } else {
-        user_id_i64 as u64
+        return HttpResponse::InternalServerError().json(json!({
+            "status": "error",
+            "message": "Invalid user data: missing id"
+        }));
     };
 
     let user_id = user_id_u64 as i64;

@@ -49,7 +49,58 @@ pub async fn get_user_by_id(req: HttpRequest, path: web::Path<u64>) -> impl Resp
                     "data": response.data
                 }));
             }
-            HttpResponse::Ok().json(response.data)
+
+            let user_id_value = response
+                .data
+                .get("user")
+                .and_then(|u| u.get("id"))
+                .cloned()
+                .unwrap_or_else(|| json!(null));
+
+            let user_id_u64 = if let Some(id) = user_id_value.as_u64() {
+                id
+            } else if let Some(id) = user_id_value.as_i64() {
+                if id < 0 {
+                    return HttpResponse::InternalServerError().json(json!({
+                        "status": "error",
+                        "message": "Invalid user data: negative id"
+                    }));
+                }
+                id as u64
+            } else {
+                return HttpResponse::InternalServerError().json(json!({
+                    "status": "error",
+                    "message": "Invalid user data: missing id"
+                }));
+            };
+
+            let email = response
+                .data
+                .get("user")
+                .and_then(|u| u.get("email"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let name = response
+                .data
+                .get("user")
+                .and_then(|u| u.get("name"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let balance = response
+                .data
+                .get("user")
+                .and_then(|u| u.get("balance"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+
+            HttpResponse::Ok().json(json!({
+                "id": user_id_u64,
+                "email": email,
+                "name": name,
+                "balance": balance
+            }))
         }
         Err(e) => HttpResponse::InternalServerError().json(json!({
             "status": "error",
