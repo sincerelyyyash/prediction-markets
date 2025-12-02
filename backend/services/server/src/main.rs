@@ -21,6 +21,9 @@ use crate::controllers::position_controller::{
 use crate::controllers::trade_controller::{
     get_trade_by_id, get_trades, get_trades_by_market, get_trades_by_user_id,
 };
+use crate::controllers::user_bookmark_controller::{
+    add_market_bookmark, get_for_you_markets, get_user_bookmarks, remove_market_bookmark,
+};
 use crate::controllers::user_controller::{get_balance, onramp, signin_user, signup_user};
 use crate::controllers::user_event_controller::{get_all_events, get_event_by_id, search_events};
 use crate::controllers::user_profile_controller::{get_all_users, get_user_by_id};
@@ -86,9 +89,13 @@ async fn run() -> std::io::Result<()> {
                     .service(get_orders_by_user)
                     .service(get_orders_by_market)
                     .service(get_positions)
-                    .service(get_position_by_market)
                     .service(get_portfolio)
+                    .service(get_position_by_market)
                     .service(get_positions_history)
+                    .service(add_market_bookmark)
+                    .service(remove_market_bookmark)
+                    .service(get_user_bookmarks)
+                    .service(get_for_you_markets)
                     .service(get_trades)
                     .service(get_trade_by_id)
                     .service(get_trades_by_market)
