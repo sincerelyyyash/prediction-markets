@@ -67,6 +67,11 @@ pub fn resolve_pending_request(request_id: String, response: RedisResponse<serde
         let mut pending_guard = pending.lock().await;
         if let Some(sender) = pending_guard.remove(&request_id) {
             let _ = sender.send(response);
+        } else {
+            log::debug!(
+                "Received response for request_id {} but no pending request found (timed out)",
+                request_id
+            );
         }
     });
 }
