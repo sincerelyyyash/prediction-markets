@@ -3,6 +3,12 @@ name = "db_worker"
 version = "0.1.0"
 edition = "2024"
 
+include = [
+    "src/**",
+    ".sqlx/**",
+    "Cargo.toml"
+]
+
 [package.metadata.sqlx]
 offline = true
 
