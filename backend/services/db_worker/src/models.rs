@@ -13,6 +13,7 @@ pub struct EventTable {
     pub resolved_at: Option<String>,
     pub winning_outcome_id: Option<i64>,
     pub created_by: i64,
+    pub img_url: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, FromRow)]
@@ -21,6 +22,7 @@ pub struct OutcomeTable {
     pub event_id: i64,
     pub name: String,
     pub status: String,
+    pub img_url: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, FromRow)]
@@ -29,7 +31,6 @@ pub struct MarketTable {
     pub outcome_id: i64,
     pub side: String,
     pub last_price: Option<i64>,
-    pub img_url: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, FromRow)]

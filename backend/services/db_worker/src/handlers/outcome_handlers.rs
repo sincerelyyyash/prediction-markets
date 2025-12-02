@@ -17,7 +17,7 @@ pub async fn handle_get_outcome_by_id(
     let outcome = match sqlx::query_as!(
         OutcomeTable,
         r#"
-        SELECT id, event_id, name, status
+        SELECT id, event_id, name, status, img_url
         FROM outcomes
         WHERE id = $1
         "#,
@@ -47,7 +47,7 @@ pub async fn handle_get_outcome_by_id(
 
     let markets = match sqlx::query!(
         r#"
-        SELECT id, outcome_id, side, last_price, img_url
+        SELECT id, outcome_id, side, last_price
         FROM markets
         WHERE outcome_id = $1
         ORDER BY side ASC
@@ -77,8 +77,7 @@ pub async fn handle_get_outcome_by_id(
                 "id": m.id,
                 "outcome_id": m.outcome_id,
                 "side": m.side.as_str(),
-                "last_price": m.last_price,
-                "img_url": m.img_url
+                "last_price": m.last_price
             })
         })
         .collect();
@@ -91,6 +90,7 @@ pub async fn handle_get_outcome_by_id(
             "event_id": outcome.event_id,
             "name": outcome.name,
             "status": outcome.status,
+            "img_url": outcome.img_url,
             "markets": markets_json
         }
     });

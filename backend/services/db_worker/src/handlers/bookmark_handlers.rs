@@ -128,12 +128,13 @@ pub async fn handle_get_market_bookmarks(
             umb.created_at,
             m.side,
             m.last_price,
-            m.img_url,
             o.id AS outcome_id,
             o.name AS outcome_name,
+            o.img_url AS outcome_img_url,
             e.id AS event_id,
             e.slug AS event_slug,
             e.title AS event_title,
+            e.img_url AS event_img_url,
             e.category,
             e.status,
             e.description
@@ -159,16 +160,17 @@ pub async fn handle_get_market_bookmarks(
                 "market": {
                     "side": row.side,
                     "last_price": row.last_price,
-                    "img_url": row.img_url,
                     "outcome": {
                         "id": row.outcome_id,
-                        "name": &row.outcome_name
+                        "name": &row.outcome_name,
+                        "img_url": &row.outcome_img_url
                     },
                     "event": {
                         "id": row.event_id,
                         "slug": &row.event_slug,
                         "title": &row.event_title,
                         "description": &row.description,
+                        "img_url": &row.event_img_url,
                         "category": &row.category,
                         "status": &row.status
                     }
@@ -238,13 +240,14 @@ pub async fn handle_get_for_you_markets(
                 m.id AS market_id,
                 m.side,
                 m.last_price,
-                m.img_url,
                 o.id AS outcome_id,
                 o.name AS outcome_name,
+                o.img_url AS outcome_img_url,
                 e.id AS event_id,
                 e.slug AS event_slug,
                 e.title AS event_title,
                 e.description,
+                e.img_url AS event_img_url,
                 e.category,
                 e.status,
                 COALESCE(p.quantity, 0) AS position_qty,
@@ -285,16 +288,17 @@ pub async fn handle_get_for_you_markets(
                 "market": {
                     "side": &row.side,
                     "last_price": row.last_price,
-                    "img_url": &row.img_url,
                     "outcome": {
                         "id": row.outcome_id,
-                        "name": &row.outcome_name
+                        "name": &row.outcome_name,
+                        "img_url": &row.outcome_img_url
                     },
                     "event": {
                         "id": row.event_id,
                         "slug": &row.event_slug,
                         "title": &row.event_title,
                         "description": &row.description,
+                        "img_url": &row.event_img_url,
                         "category": &row.category,
                         "status": &row.status
                     }
