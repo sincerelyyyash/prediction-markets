@@ -25,7 +25,7 @@ pub async fn start_db_read_response_consumer() {
         );
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
         info!("DB read response consumer ready to start reading");
-        let mut last_id = ">".to_string();
+        let mut last_id = "$".to_string();
 
         loop {
             match read_stream_messages(&client, stream_name, &mut last_id).await {
@@ -47,8 +47,8 @@ pub async fn start_db_read_response_consumer() {
 }
 
 fn increment_stream_id(id: &str) -> String {
-    if id == "0" || id == ">" {
-        return ">".to_string();
+    if id == "0" || id == "$" {
+        return "$".to_string();
     }
     
     if let Some(dash_pos) = id.find('-') {
@@ -75,8 +75,8 @@ async fn read_stream_messages(
     use fred::types::RedisValue;
 
     let streams = vec![stream];
-    let read_id = if *last_id == ">" {
-        ">".to_string()
+    let read_id = if *last_id == "$" {
+        "$".to_string()
     } else {
         increment_stream_id(last_id)
     };
