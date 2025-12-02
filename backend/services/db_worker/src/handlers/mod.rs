@@ -1,4 +1,5 @@
 pub mod admin_handlers;
+pub mod bookmark_handlers;
 pub mod common;
 pub mod db_event_handlers;
 pub mod event_handlers;
@@ -9,6 +10,10 @@ pub mod trade_handlers;
 pub mod user_handlers;
 
 pub use admin_handlers::{handle_get_admin_by_email, handle_get_admin_by_id};
+pub use bookmark_handlers::{
+    handle_add_market_bookmark, handle_get_for_you_markets, handle_get_market_bookmarks,
+    handle_remove_market_bookmark,
+};
 pub use common::send_read_response;
 pub use db_event_handlers::handle_db_event;
 pub use event_handlers::{handle_get_all_events, handle_get_event_by_id, handle_search_events};

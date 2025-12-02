@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 
@@ -28,6 +29,7 @@ pub struct MarketTable {
     pub outcome_id: i64,
     pub side: String,
     pub last_price: Option<i64>,
+    pub img_url: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, FromRow)]
@@ -45,4 +47,12 @@ pub struct AdminTable {
     pub email: String,
     pub name: String,
     pub password: String,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, FromRow)]
+pub struct UserMarketBookmark {
+    pub id: i64,
+    pub user_id: i64,
+    pub market_id: i64,
+    pub created_at: DateTime<Utc>,
 }

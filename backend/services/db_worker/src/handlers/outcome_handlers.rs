@@ -47,7 +47,7 @@ pub async fn handle_get_outcome_by_id(
 
     let markets = match sqlx::query!(
         r#"
-        SELECT id, outcome_id, side, last_price
+        SELECT id, outcome_id, side, last_price, img_url
         FROM markets
         WHERE outcome_id = $1
         ORDER BY side ASC
@@ -77,7 +77,8 @@ pub async fn handle_get_outcome_by_id(
                 "id": m.id,
                 "outcome_id": m.outcome_id,
                 "side": m.side.as_str(),
-                "last_price": m.last_price
+                "last_price": m.last_price,
+                "img_url": m.img_url
             })
         })
         .collect();

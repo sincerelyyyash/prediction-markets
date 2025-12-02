@@ -210,6 +210,18 @@ async fn process_messages(
             "get_positions_by_user" => {
                 handlers::handle_get_positions_by_user(data, pool, request_id.clone()).await
             }
+            "add_market_bookmark" => {
+                handlers::handle_add_market_bookmark(data, pool, request_id.clone()).await
+            }
+            "remove_market_bookmark" => {
+                handlers::handle_remove_market_bookmark(data, pool, request_id.clone()).await
+            }
+            "get_user_bookmarks" => {
+                handlers::handle_get_market_bookmarks(data, pool, request_id.clone()).await
+            }
+            "get_for_you_markets" => {
+                handlers::handle_get_for_you_markets(data, pool, request_id.clone()).await
+            }
             _ => {
                 error!("Unknown read action: {}", action);
                 let error_response = redis_client::RedisResponse::new(
