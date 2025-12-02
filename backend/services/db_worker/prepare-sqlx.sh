@@ -51,7 +51,7 @@ cd "$WORKSPACE_ROOT"
 echo "Running cargo sqlx prepare from workspace root..."
 echo "Workspace: $WORKSPACE_ROOT"
 echo "Targeting package: db_worker"
-cargo sqlx prepare --database-url "$DB_URL" -- --package db_worker 2>&1
+cargo sqlx prepare --workspace --database-url "$DB_URL" -- --package db_worker 2>&1
 
 echo ""
 echo "✓ sqlx offline metadata prepared successfully!"
