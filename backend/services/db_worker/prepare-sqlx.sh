@@ -45,13 +45,13 @@ if ! command -v cargo-sqlx &> /dev/null; then
     cargo install sqlx-cli --no-default-features --features postgres
 fi
 
-# Navigate to workspace root and run sqlx prepare for db_worker package
+# Navigate to db_worker directory and run sqlx prepare
 # This ensures all queries in db_worker are analyzed
-cd "$WORKSPACE_ROOT"
-echo "Running cargo sqlx prepare from workspace root..."
-echo "Workspace: $WORKSPACE_ROOT"
-echo "Targeting package: db_worker"
-cargo sqlx prepare --workspace --database-url "$DB_URL" -- --package db_worker 2>&1
+cd "$SCRIPT_DIR"
+echo "Running cargo sqlx prepare for db_worker package..."
+echo "Package directory: $SCRIPT_DIR"
+echo "Database URL: ${DB_URL:0:20}..." # Show only first 20 chars for security
+cargo sqlx prepare --database-url "$DB_URL" 2>&1
 
 echo ""
 echo "✓ sqlx offline metadata prepared successfully!"
