@@ -45,6 +45,17 @@ pub async fn handle_get_user_by_email(
         }
     };
 
+    if user.id <= 0 {
+        let error_response = RedisResponse::new(
+            500,
+            false,
+            format!("Invalid user data: non-positive user ID {}", user.id),
+            serde_json::json!(null),
+        );
+        send_read_response(&request_id, error_response).await?;
+        return Err(format!("Invalid user ID {} from database", user.id));
+    }
+
     let response_data = serde_json::json!({
         "id": user.id,
         "email": user.email,
@@ -68,9 +79,17 @@ pub async fn handle_get_user_by_id(
     pool: &PgPool,
     request_id: String,
 ) -> Result<(), String> {
-    let user_id = data["user_id"]
+    let user_id_u64 = data["user_id"]
         .as_u64()
-        .ok_or_else(|| "Invalid user_id".to_string())? as i64;
+        .ok_or_else(|| "Invalid user_id".to_string())?;
+    
+    if user_id_u64 > i64::MAX as u64 {
+        return Err(format!("User ID {} exceeds i64::MAX", user_id_u64));
+    }
+    if user_id_u64 == 0 {
+        return Err("User ID cannot be zero".to_string());
+    }
+    let user_id = user_id_u64 as i64;
 
     let user = match sqlx::query_as!(
         UserTable,
@@ -102,6 +121,17 @@ pub async fn handle_get_user_by_id(
             return Err(format!("Failed to fetch user: {}", e));
         }
     };
+
+    if user.id <= 0 {
+        let error_response = RedisResponse::new(
+            500,
+            false,
+            format!("Invalid user data: non-positive user ID {}", user.id),
+            serde_json::json!(null),
+        );
+        send_read_response(&request_id, error_response).await?;
+        return Err(format!("Invalid user ID {} from database", user.id));
+    }
 
     let response_data = serde_json::json!({
         "status": "success",
@@ -155,6 +185,7 @@ pub async fn handle_get_all_users(
 
     let users_json: Vec<serde_json::Value> = users
         .iter()
+        .filter(|u| u.id > 0)
         .map(|u| {
             serde_json::json!({
                 "id": u.id,

@@ -248,7 +248,7 @@ pub async fn handle_search_events(
     let mut query_builder = sqlx::QueryBuilder::new(
         r#"
         SELECT id, slug, title, description, category, status, resolved_at,
-            winning_outcome_id, created_by
+            winning_outcome_id, created_by, img_url
         FROM events
         WHERE 1=1
         "#,

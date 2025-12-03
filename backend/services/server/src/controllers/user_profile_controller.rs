@@ -14,6 +14,13 @@ pub async fn get_user_by_id(req: HttpRequest, path: web::Path<u64>) -> impl Resp
         Err(resp) => return resp,
     };
 
+    if user_id > i64::MAX as u64 {
+        return HttpResponse::BadRequest().json(json!({
+            "status": "error",
+            "message": "Invalid user ID: exceeds maximum value"
+        }));
+    }
+
     if authenticated_user_id != user_id as i64 {
         return HttpResponse::Forbidden().json(json!({
             "status": "error",

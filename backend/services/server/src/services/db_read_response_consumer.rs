@@ -1,6 +1,6 @@
 use crate::utils::redis_stream::resolve_pending_request;
 use fred::prelude::*;
-use log::{error, info};
+use log::{error, info, warn};
 use redis_client::RedisManager;
 use redis_client::RedisResponse;
 
@@ -24,20 +24,32 @@ pub async fn start_db_read_response_consumer() {
             stream_name
         );
         tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        
+        let mut last_id = match get_stream_last_id(&client, stream_name).await {
+            Ok(id) => {
+                info!("Starting from stream last ID: {}", id);
+                id
+            }
+            Err(e) => {
+                warn!("Could not get stream last ID, starting from beginning: {}", e);
+                "0".to_string()
+            }
+        };
+        
         info!("DB read response consumer ready to start reading");
-        let mut last_id = "$".to_string();
 
         loop {
             match read_stream_messages(&client, stream_name, &mut last_id).await {
                 Ok(messages) => {
                     if !messages.is_empty() {
+                        info!("Read {} messages from {} (last_id: {})", messages.len(), stream_name, last_id);
                         if let Err(e) = process_message(messages).await {
                             error!("Error processing DB read response message: {}", e);
                         }
                     }
                 }
                 Err(e) => {
-                    error!("Error reading from stream {}: {}", stream_name, e);
+                    error!("Error reading from stream {} (last_id: {}): {}", stream_name, last_id, e);
                     tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
                 }
             }
@@ -46,9 +58,28 @@ pub async fn start_db_read_response_consumer() {
     });
 }
 
+async fn get_stream_last_id(client: &RedisClient, stream: &str) -> Result<String, RedisError> {
+    use fred::types::RedisValue;
+    
+    let result: RedisValue = client.xrevrange::<RedisValue, _, _, _>(stream, "+", "-", Some(1)).await?;
+    
+    if let RedisValue::Array(messages) = result {
+        if let Some(RedisValue::Array(msg)) = messages.first() {
+            if let Some(RedisValue::String(msg_id)) = msg.first() {
+                return Ok(msg_id.to_string());
+            }
+        }
+    }
+    
+    Ok("0".to_string())
+}
+
 fn increment_stream_id(id: &str) -> String {
-    if id == "0" || id == "$" {
+    if id == "$" {
         return "$".to_string();
+    }
+    if id == "0" {
+        return "0".to_string();
     }
     
     if let Some(dash_pos) = id.find('-') {

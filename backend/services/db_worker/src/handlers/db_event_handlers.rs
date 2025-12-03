@@ -353,9 +353,18 @@ async fn handle_balance_updated(event: Value, pool: &PgPool) -> Result<(), Strin
 async fn handle_user_created(event: Value, pool: &PgPool) -> Result<(), String> {
     let data = &event;
 
-    let user_id = data["user_id"]
+    let user_id_u64 = data["user_id"]
         .as_u64()
         .ok_or_else(|| "Invalid user_id".to_string())?;
+    
+    if user_id_u64 > i64::MAX as u64 {
+        return Err(format!("User ID {} exceeds i64::MAX and cannot be stored in database", user_id_u64));
+    }
+    if user_id_u64 == 0 {
+        return Err("User ID cannot be zero".to_string());
+    }
+    let user_id = user_id_u64 as i64;
+    
     let email = data["email"]
         .as_str()
         .ok_or_else(|| "Invalid email".to_string())?;
@@ -375,7 +384,7 @@ async fn handle_user_created(event: Value, pool: &PgPool) -> Result<(), String> 
         VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT (id) DO NOTHING
         "#,
-        user_id as i64,
+        user_id,
         email,
         name,
         password,

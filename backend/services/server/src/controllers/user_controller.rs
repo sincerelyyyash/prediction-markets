@@ -6,6 +6,7 @@ use actix_web::{get, post, web, HttpRequest, HttpResponse, Responder};
 use bcrypt::{hash, verify, DEFAULT_COST};
 use chrono::Utc;
 use engine::types::db_event_types::{DbEvent, UserCreatedEvent};
+use rand::{thread_rng, Rng};
 use redis_client::RedisRequest;
 use serde_json::json;
 use std::env;
@@ -31,7 +32,7 @@ pub async fn signup_user(req: web::Json<SignUpUserInput>) -> impl Responder {
         }
     };
 
-    let user_id = Uuid::new_v4().as_u128() as u64;
+    let user_id = generate_safe_user_id();
 
     let event = DbEvent::UserCreated(UserCreatedEvent {
         user_id,
@@ -81,10 +82,37 @@ pub async fn signup_user(req: web::Json<SignUpUserInput>) -> impl Responder {
         }
     }
 
+    let user_id_i64 = match validate_user_id_to_i64(user_id) {
+        Ok(id) => id,
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(json!({
+                "status": "error",
+                "message": e
+            }));
+        }
+    };
+
+    let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
+    let token = match create_jwt(&user_id_i64, &jwt_secret) {
+        Ok(t) => t,
+        Err(_) => {
+            return HttpResponse::InternalServerError().json(json!({
+                "status": "error",
+                "message": "Failed to generate token"
+            }))
+        }
+    };
+
     HttpResponse::Ok().json(json!({
         "status":"success",
-        "message":"User registered Succesfully",
-        "user_id": user_id
+        "message":"User registered successfully",
+        "token": token,
+        "user": {
+            "id": user_id,
+            "email": req.email,
+            "name": req.name,
+            "balance": 0
+        }
     }))
 }
 
@@ -149,7 +177,15 @@ pub async fn signin_user(req: web::Json<LoginUserInput>) -> impl Responder {
         }));
     };
 
-    let user_id = user_id_u64 as i64;
+    let user_id = match validate_user_id_to_i64(user_id_u64) {
+        Ok(id) => id,
+        Err(e) => {
+            return HttpResponse::InternalServerError().json(json!({
+                "status": "error",
+                "message": e
+            }));
+        }
+    };
 
     let user_password = match user_response.data["password"].as_str() {
         Some(pwd) => pwd,
@@ -353,5 +389,20 @@ pub async fn onramp(req: HttpRequest, body: web::Json<serde_json::Value>) -> imp
             "message": "Failed to add balance",
             "error": e
         })),
+    }
+}
+
+fn generate_safe_user_id() -> u64 {
+    let mut rng = thread_rng();
+    rng.gen_range(1..=9_223_372_036_854_775_807u64)
+}
+
+fn validate_user_id_to_i64(id: u64) -> Result<i64, String> {
+    if id > i64::MAX as u64 {
+        Err(format!("User ID {} exceeds i64::MAX", id))
+    } else if id == 0 {
+        Err("User ID cannot be zero".to_string())
+    } else {
+        Ok(id as i64)
     }
 }
